@@ -1,4 +1,4 @@
-param([ValidateSet('Desktop','Web','Shell','Stop','Install','Repair','Check')][string]$Action='Desktop')
+param([ValidateSet('Desktop','Web','Shell','Stop','Install','Repair','Check')][string]$Action='Desktop',[switch]$KeepConsole,[switch]$NoBrowser)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $script:Repository='Padparaja-Ge/Super-AI-Story'
@@ -153,13 +153,33 @@ function Invoke-SasInstaller([string]$Directory,[string]$Mode) {
         Write-Host ''
         if(-not $ready -or -not $ready.complete){throw 'Startup timed out. Check SAS logs.'}
         if($ready.PSObject.Properties['error']){throw $ready.error}
-        if($Mode -eq 'Stop'){Write-Host 'Web server stopped.'}else{Write-Host ('SAS Web: '+$ready.url)}
+        if($Mode -eq 'Stop'){Write-Host 'Web server stopped.'}else{
+            Write-Host ('SAS Web: '+$ready.url)
+            return [PSCustomObject]@{url=[string]$ready.url;alreadyRunning=!!$ready.PSObject.Properties['alreadyRunning']}
+        }
     }finally{
         [Environment]::SetEnvironmentVariable('ELECTRON_RUN_AS_NODE',$oldNode,'Process')
         [Environment]::SetEnvironmentVariable('SAS_STARTUP_FILE',$oldStatus,'Process')
         if(Test-Path -LiteralPath $status){Remove-Item -LiteralPath $status -Force}
     }
 }
+function Show-SasWebResult([string]$Url,[switch]$WaitForEnter,[switch]$SkipBrowser) {
+    $address=$null
+    if(-not [Uri]::TryCreate($Url,[UriKind]::Absolute,[ref]$address) -or $address.Scheme -cne 'http' -or $address.UserInfo){throw 'Invalid SAS Web address.'}
+    if(-not $SkipBrowser -and $env:SAS_WEB_NO_BROWSER -ne '1'){
+        try{Start-Process -FilePath $address.AbsoluteUri -ErrorAction Stop|Out-Null}
+        catch{Write-Host ('Could not open the browser. Open this address manually: '+$address.AbsoluteUri) -ForegroundColor Yellow}
+    }
+    Write-Host 'The server runs in the background. Use Stop-SAS-Web.cmd to stop it.'
+    if($WaitForEnter -and $env:SAS_WEB_NO_PAUSE -ne '1'){
+        Write-Host ''
+        Write-Host 'Press Enter to close this window (the server will keep running).'
+        $null=Read-Host
+    }
+}
 if($MyInvocation.InvocationName -ne '.'){
-    try{Invoke-SasInstaller $PSScriptRoot $Action}catch{Write-Host ('SAS: '+$_.Exception.Message) -ForegroundColor Red;exit 1}
+    try{
+        $result=Invoke-SasInstaller $PSScriptRoot $Action
+        if($Action -in @('Web','Shell')){Show-SasWebResult $result.url -WaitForEnter:$KeepConsole -SkipBrowser:$NoBrowser}
+    }catch{Write-Host ('SAS: '+$_.Exception.Message) -ForegroundColor Red;exit 1}
 }
