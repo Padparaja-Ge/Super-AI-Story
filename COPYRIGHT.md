@@ -2,7 +2,7 @@
 
 © 2026 Padparaja (GitHub: Padparaja-Ge). Все права защищены в отношении оригинальных материалов SAS, права на которые принадлежат Padparaja.
 
-Разработчики проекта: **Padparaja** и **Wenzeslaus** (GitHub: Wenzeslaus-first).
+Разработчики проекта: [**Padparaja-Ge**](https://github.com/Padparaja-Ge) + [**Wenzeslaus-first**](https://github.com/Wenzeslaus-first).
 
 ## Доступ к проекту
 
