@@ -326,7 +326,7 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   const dist = path.join(projectRoot, 'dist');
   app.use(express.static(dist, { index: false }));
   app.get('/{*path}', (req, res) => {
-    if (fs.existsSync(path.join(dist, 'index.html'))) res.sendFile(path.join(dist, 'index.html'));
+    if (fs.existsSync(path.join(dist, 'index.html'))) res.sendFile('index.html', {root:dist});
     else res.status(503).type('text/plain').send('SAS: интерфейс ещё не собран. Выполните npm run build или используйте npm run dev.');
   });
   app.use((error, req, res, next) => {

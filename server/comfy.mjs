@@ -140,7 +140,7 @@ export function createComfyRouter({getState,saveState,getSecret,tasks,dataDir,on
     const image=getState().images.find(i=>i.id===req.params.id), index=Number(req.params.index);
     if(!Number.isInteger(index)||!image?.files?.[index])return res.status(404).json({error:'Изображение не найдено.'});
     const file=image.files[index];if(!/^[a-f0-9-]+\.(png|jpg|webp)$/.test(file))throw new Error('Некорректное имя изображения.');
-    res.sendFile(path.join(folder,file));
+    res.sendFile(file,{root:folder});
   });
   router.post('/images/:id/cancel',async(req,res)=>{
     const image=getState().images.find(i=>i.id===req.params.id);if(!image || image.status!=='queued')throw new Error('Изображение уже завершено.');

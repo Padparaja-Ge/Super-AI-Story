@@ -14,7 +14,7 @@ const loginPage=`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name
 const loopback=host=>['127.0.0.1','localhost','::1','[::1]'].includes(host);
 const equal=(a,b)=>{const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);};
 
-export async function startWebServer({port,host,dataDir=defaultDataDir,mode='full',upstream=process.env.SAS_BACKEND_URL||'',password,coreMode='process',coreIdleMs=30000,networkFile,desktop=false,onProgress=()=>{}}={}){
+export async function startWebServer({port,host,dataDir=defaultDataDir,mode='full',upstream=process.env.SAS_BACKEND_URL||'',password,coreMode='process',coreIdleMs=30000,networkFile,desktop=false,onProgress=()=>{},frontendDir=path.join(projectRoot,'dist')}={}){
   onProgress(35,'Проверяем настройки и каталог данных');
   const network=createNetworkPolicy({file:networkFile}),networkConfig=network.read();
   port ??= Number(process.env.SAS_WEB_PORT||networkConfig.port);host ||= process.env.SAS_WEB_HOST||networkConfig.host;
@@ -112,8 +112,8 @@ export async function startWebServer({port,host,dataDir=defaultDataDir,mode='ful
       req.on('aborted',()=>outgoing.destroy());req.pipe(outgoing);
     }catch(error){res.status(503).json({error:error.message});}
   });
-  app.use(express.static(path.join(projectRoot,'dist'),{index:false}));
-  app.get('/{*path}',(req,res)=>res.sendFile(path.join(projectRoot,'dist','index.html')));
+  app.use(express.static(frontendDir,{index:false}));
+  app.get('/{*path}',(req,res)=>res.sendFile('index.html',{root:frontendDir}));
   onProgress(75,'Открываем локальный интерфейс');
   try{server=await listen(host,port);port=server.address().port;onProgress(85,'Сервер готов');}catch(error){clearInterval(heartbeat);await lease(leaseOrigin,true).catch(()=>{});await ownedCore?.close();throw error;}
   return {get port(){return port;},get host(){return host;},get authRequired(){return !!password;},get server(){return server;},close:async()=>{if(closed)return;closed=true;clearInterval(heartbeat);await lease(leaseOrigin,true).catch(()=>{});await ownedCore?.close();await Promise.all([...servers].map(s=>new Promise(resolve=>{s.close(resolve);s.closeAllConnections();})));}};
