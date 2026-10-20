@@ -1,0 +1,36 @@
+import {abilities,abilityNames,validateSRP,modifier} from './srp.mjs';
+import {levelBudget,skillBudget,normalizeSkill,damageNames} from './rpg-rules.mjs';
+import {migrateInventory,checkSkills,pointsOf,armorNames,armorSlots,armorHelp,normalizeItem,weightNames} from './equipment.mjs';
+export function editSheet(actor,save){
+ const draft=structuredClone(actor);draft.inventory=migrateInventory(draft.inventory,draft.skills);draft.spells??=(draft.skills||[]).filter(s=>s.kind==='magic');
+ let tab='stats';const dialog=document.createElement('dialog'),form=document.createElement('div');dialog.append(form);document.body.append(dialog);
+ const node=(tag,text='')=>{const e=document.createElement(tag);e.textContent=text;return e;};
+ const input=(parent,label,obj,key,options)=>{const wrap=node('label',label),value=obj[key],e=document.createElement(options?'select':typeof value==='boolean'?'input':key==='description'||key==='appearance'||key==='notes'?'textarea':'input');if(options)for(const [v,n] of Object.entries(options))e.add(new Option(n,v));else if(e.tagName==='INPUT')e.type=typeof value==='number'?'number':typeof value==='boolean'?'checkbox':'text';if(e.type==='checkbox')e.checked=value;else e.value=String(value??'');e.oninput=()=>{obj[key]=e.type==='checkbox'?e.checked:e.type==='number'?Number(e.value):e.value;};wrap.append(e);parent.append(wrap);return e;};
+ const button=(parent,title,fn)=>{const e=node('button',title);e.type='button';e.onclick=fn;parent.append(e);};
+ const choice=(parent,title,obj,key,defaults)=>{const e=input(parent,title,obj,key);e.type='checkbox';e.checked=!!obj[key];e.onchange=()=>{obj[key]=e.checked?structuredClone(defaults):undefined;draw();};};
+ const draw=()=>{
+ form.replaceChildren(node('h3',actor.name+' · уровень '+actor.level));const tabs=node('div');for(const [k,t] of [['stats','Характеристики'],['checks','Навыки'],['inventory','Инвентарь'],['magic','Магия']])button(tabs,t,()=>{tab=k;draw();});form.append(tabs);
+ if(tab==='stats'){form.append(node('p','Бюджет очков: '+levelBudget(actor.level)));input(form,'Класс',draft,'className');for(const k of abilities)input(form,abilityNames[k]+' · модификатор '+modifier(pointsOf(draft,k)),draft.abilities,k);}
+ if(tab==='checks')for(const [,name,k] of checkSkills)form.append(node('p',name+': 1д20 + '+modifier(pointsOf(draft,k))+' ('+abilityNames[k]+')'));
+ if(tab==='inventory'){
+ form.append(node('p','Экипировка в бою стоит 1 быстрое действие. Изменять состав инвентаря можно между боями.'));
+ draft.inventory.forEach((i,index)=>{const block=node('details');block.append(node('summary',i.name+' ×'+i.quantity));form.append(block);for(const k of ['name','quantity','equipped'])input(block,{name:'Название',quantity:'Количество',equipped:'Экипировано'}[k],i,k);
+ choice(block,'Оружие',i,'weapon',{damage:'1d6',reach:'melee',hands:'one',range:1,damageType:'slashing',ammoTag:'',ammoPerShot:1});choice(block,'Броня',i,'armor',{kind:'light',slot:'chest'});choice(block,'Расходник',i,'consumable',{effect:'heal',points:20});choice(block,'Артефакт',i,'artifact',{kind:'passive',effect:'heal',points:10,slotCost:0,hpCost:0,halfHp:false,range:1});
+ if(i.weapon){const w=i.weapon;input(block,'Урон (1д12)',w,'damage');input(block,'Атака',w,'reach',{melee:'Ближняя',ranged:'Дальняя'});w.weight||='light';input(block,'Вес оружия',w,'weight',weightNames);input(block,'Хват',w,'hands',{one:'Одноручное',two:'Двуручное'});input(block,'Дальность',w,'range');input(block,'Тип урона',w,'damageType',{bludgeoning:'Дробящий',piercing:'Колющий',slashing:'Рубящий'});input(block,'Требуемый боеприпас',w,'ammoTag');input(block,'Снарядов за выстрел',w,'ammoPerShot');}
+ if(i.armor){const e=input(block,'Тип доспеха',i.armor,'kind',armorNames);e.title=armorHelp[i.armor.kind];input(block,'Часть тела',i.armor,'slot',armorSlots);const help=node('small','ⓘ О доспехе');help.title=armorHelp[i.armor.kind];block.append(help);}
+ if(i.consumable){input(block,'Эффект',i.consumable,'effect',{heal:'Зелье лечения',restore:'Зелье ячеек',bandage:'Перевязка'});input(block,'Величина',i.consumable,'points');}
+ if(i.artifact){const a=i.artifact;input(block,'Тип артефакта',a,'kind',{active:'Активный',passive:'Пассивный'});input(block,'Действие',a,'effect',{heal:'Лечение',restore:'Ячейки',revive:'Воскрешение',utility:'Сюжетное действие'});for(const [k,t] of [['points','Сила'],['slotCost','Цена ячеек'],['hpCost','Цена HP'],['halfHp','Цена: половина HP'],['range','Дальность']])input(block,t,a,k);}
+ input(block,'Если это снаряд: название боеприпаса',i,'ammoTag');const buffs=node('details');buffs.append(node('summary','Усиления и штрафы'));block.append(buffs);for(const [k,t] of Object.entries({...abilityNames,armor:'КД',damage:'Урон',move:'Перемещение',hp:'Максимум HP',slots:'Максимум ячеек'})){i.buffs[k]??=0;input(buffs,t,i.buffs,k);}
+ for(const [k,t] of [['appearance','Внешний вид'],['description','Описание действия'],['notes','Другие свойства']])input(block,t,i,k);button(block,'Удалить предмет',()=>{draft.inventory.splice(index,1);draw();});
+ });if(draft.inventory.length<200)button(form,'Добавить предмет',()=>{draft.inventory.push(normalizeItem({id:crypto.randomUUID(),name:'Новый предмет'}));draw();});
+ }
+ if(tab==='magic'){
+ form.append(node('p','Заклинаний: '+draft.spells.length+'/'+skillBudget(actor.level)));
+ draft.spells.forEach((s,index)=>{const block=node('details');block.append(node('summary',s.name));form.append(block);input(block,'Название',s,'name');input(block,'Характеристика заклинателя',s,'castingAttribute',{intelligence:'Интеллект',wisdom:'Мудрость',charisma:'Харизма'});input(block,'Градация',s,'grade',{attack:'Атака',defense:'Защита',buff:'Усиление',action:'Действие'});input(block,'Взаимодействие',s,'reach',{melee:'Касание',ranged:'Дальнее'});input(block,'Форма',s,'delivery',{arrow:'Стрела +2',projectile:'Снаряд · помеха',beam:'Луч'});input(block,'Урон кубиками',s,'damage');input(block,'Тип урона',s,'damageType',damageNames);
+ for(const [k,t] of [['range','Дальность'],['slotCost','Стоимость ячеек'],['points','Сила эффекта'],['hits','Поглощаемых ударов'],['duration','Длительность']])input(block,t,s,k);
+ input(block,'Усиление',s,'buff',{attribute:'Очки характеристики',damage:'Урон типа'});input(block,'Усиливаемая характеристика',s,'attribute',abilityNames);input(block,'Действие',s,'action',{heal:'Лечение',restore:'Ячейки',grapple:'Захват',utility:'Сюжетное'});input(block,'Внешний вид и действие',s,'description');button(block,'Удалить заклинание',()=>{draft.spells.splice(index,1);draw();});
+ });if(draft.spells.length<skillBudget(actor.level))button(form,'Добавить заклинание',()=>{draft.spells.push(normalizeSkill({id:crypto.randomUUID(),name:'Новое заклинание',kind:'magic',castingAttribute:'intelligence',damage:'2d6'}));draw();});
+ }
+ const error=node('p');error.setAttribute('role','alert');form.append(error);button(form,'Сохранить',()=>{try{const sheet=validateSRP({...draft,kind:'srp'});save({action:'sheet',className:sheet.className,abilities:sheet.abilities,inventory:sheet.inventory,spells:sheet.spells});dialog.close();}catch(e){error.textContent=e.message;}});button(form,'Отмена',()=>dialog.close());
+ };dialog.onclose=()=>dialog.remove();draw();dialog.showModal();
+}

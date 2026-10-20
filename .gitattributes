@@ -1,0 +1,8 @@
+* text=auto
+*.cmd -text
+*.ps1 -text
+*.sh text eol=lf
+*.png binary
+*.webp binary
+*.ico binary
+*.jpg binary

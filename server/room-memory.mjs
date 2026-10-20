@@ -1,0 +1,123 @@
+import crypto from 'node:crypto';
+import {createMemory,memoryDue,validMemory} from './memory.mjs';
+import {complete,getConnection} from './llm.mjs';
+import {cosine} from './embeddings.mjs';
+import {roomEmbeddingState} from './room-models.mjs';
+
+export const roomMemoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,memoryMode:'hybrid',memoryBudget:1000,historyLimit:40,loreBudget:1000};
+export function roomChat(room,base={}){
+  const engine=(room.tactical?.eventArchive||[]).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
+  const messages=[...(room.messages||[]).filter(m=>m.kind!=='image'&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>({...m,content:m.role==='user'?`${m.name||'Игрок'} (${m.personaName||m.name||'Игрок'}): ${m.content}`:m.content})),...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+  return {...base,id:'room-'+room.id,summary:room.summary||'',memory:room.memory||[],memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages};
+}
+export function roundMessages(chat){
+  let start=chat.messages.length;
+  while(start>0&&chat.messages[start-1].role!=='assistant')start--;
+  return chat.messages.slice(start).filter(m=>m.role==='user'&&m.kind!=='engine');
+}
+const fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
+const balanced=(text,limit)=>text.length<=limit?text:text.slice(0,Math.floor(limit*.7))+'\n[…]\n'+text.slice(-Math.floor(limit*.3));
+export function extractiveProtocol(text,limit){
+  const seen=new Set(),parts=[];
+  for(const {segment} of new Intl.Segmenter('ru',{granularity:'sentence'}).segment(text)){
+    const key=segment.trim().replace(/\s+/g,' ').toLowerCase();if(!key||seen.has(key))continue;seen.add(key);
+    parts.push({text:segment.trim(),index:parts.length,score:/[?？]|\d|спраш|просит|хоч|реш|пыта|бер[её]т|клад[её]т|атак|охраня|защи|направ|отправ|услов|обещ|не\s+(?:напад|уход|трог|дела)/iu.test(segment)?3:0});
+  }
+  if(parts.map(p=>p.text).join('\n').length<=limit)return parts.map(p=>p.text).join('\n');
+  if(parts.length){parts[0].score+=2;parts.at(-1).score+=1;}
+  const selected=[];let available=limit;
+  for(const part of [...parts].sort((a,b)=>b.score-a.score||a.index-b.index)){
+    if(available<40)break;
+    if(part.text.length>available&&selected.length)continue;
+    const text=part.text.length<=available?part.text:balanced(part.text,Math.max(20,available-6));
+    selected.push({...part,text});available-=text.length+1;
+  }
+  return selected.sort((a,b)=>a.index-b.index).map(p=>p.text).join('\n');
+}
+export function sourceDocuments(chat){
+  const recent=new Set(roundMessages(chat).map(m=>m.id));
+  return chat.messages.flatMap((m,index)=>{
+    if(recent.has(m.id)||m.kind==='dice'||!['user','assistant'].includes(m.role)||!m.content?.trim())return [];
+    const docs=[];
+    // Overlapping source excerpts retain details that a short summary can omit.
+    for(let offset=0;offset<m.content.length;offset+=850)docs.push({id:`source:${m.id}:${offset}`,messageId:m.id,index,offset,role:m.role,messageKind:m.kind,kind:'source',text:m.content.slice(offset,offset+1100)});
+    return docs;
+  });
+}
+export function createRoomMemory({getState,saveState,getSecret,embeddings,completion=complete}){
+  const find=(state,id)=>[state.multiplayer,...(state.multiplayerHistories||[])].find(r=>r?.id===id);
+  async function summarize(id,{signal,onProgress=()=>{}}={}){
+    const adapter=createMemory({getSecret,completion:(c,k,m,options)=>completion(c,k,m,{...options,adaptInstruction:true}),getState:()=>{
+      const state=getState(),room=find(state,id);if(!room)throw new Error('История комнаты удалена.');
+      const chat=roomChat(room,{connectionId:room.aiSettings?.summaryConnectionId||room.connectionId});
+      return {...state,chats:[chat],connections:state.connections.map(c=>({...c,maxTokens:400})),settings:{...state.settings,localSampling:{...state.settings.localSampling,maxTokens:400}}};
+    },saveState:adapted=>{
+      const state=getState(),room=find(state,id);if(!room)throw new Error('История комнаты удалена.');
+      room.memory=adapted.chats[0].memory;room.summary=adapted.chats[0].summary;saveState(state);
+    }});
+    return adapter.summarize('room-'+id,{signal,onProgress});
+  }
+  async function maintain(id,options={}){
+    const room=find(getState(),id);if(!room)return;
+    if(memoryDue(roomChat(room)))return summarize(id,options);
+  }
+  async function recall(state,chat,signal){
+    state=roomEmbeddingState(state,chat);
+    const warnings=[],report={sources:[],memoryIds:[],vectorStatus:chat.memorySettings.vectorMemory?'ready':'disabled'};
+    let retrieval={};
+    try{retrieval=await embeddings?.retrieve(state,chat,'',signal)||{};}catch(error){signal?.throwIfAborted();warnings.push('Векторный поиск: '+error.message);report.vectorStatus='fallback';}
+    report.memoryIds=retrieval.memoryIds||[];
+    if(!chat.memorySettings.vectorMemory)return {retrieval,report,warnings,text:''};
+    const queries=roundMessages(chat).filter(m=>m.kind!=='dice').slice(-8).map(m=>balanced(m.content,2000));
+    if(!queries.length)queries.push(chat.messages.at(-1)?.content||'События приключения');
+    const docs=sourceDocuments(chat);
+    let ranked=[],preferred=[];
+    if(docs.length&&embeddings)try{
+      const vectors=await embeddings.vectors(state,[...queries,...docs.map(d=>d.text)],signal);
+      // Old requests and repeated scenery are weaker evidence than recorded
+      // outcomes. They must not displace facts when players ask a follow-up.
+      const weight=d=>{const sentences=[...new Intl.Segmenter('ru',{granularity:'sentence'}).segment(d.text)].map(s=>s.segment.trim().toLowerCase());const diversity=new Set(sentences).size/Math.max(1,sentences.length);return (d.role==='user'?(d.messageKind==='engine'?1:/\?|просит|спраш|хочет услышать/iu.test(d.text)?.5:.7):1)*Math.max(.35,diversity);};
+      const score=(d,q,i)=>cosine(vectors[q],vectors[queries.length+i])*weight(d);
+      const threshold=Number(state.settings.embeddings?.threshold??.35),byQuery=queries.map((_,q)=>docs.map((d,i)=>({...d,score:score(d,q,i)})).filter(d=>d.score>=threshold).sort((a,b)=>b.score-a.score));
+      preferred=byQuery.map(list=>list[0]).filter(Boolean);
+      ranked=docs.map((d,i)=>({...d,score:Math.max(...queries.map((_,q)=>score(d,q,i)))}));
+      ranked=ranked.filter(d=>d.score>=threshold).sort((a,b)=>b.score-a.score);
+    }catch(error){signal?.throwIfAborted();report.vectorStatus='fallback';if(!warnings.length)warnings.push('Векторный поиск исходных событий: '+error.message);}
+    if(report.vectorStatus==='fallback'){
+      const words=[...new Set(queries.join(' ').toLowerCase().match(/[\p{L}\p{N}]{4,}/gu)||[])];
+      ranked=docs.map(d=>({...d,score:words.reduce((sum,w)=>sum+(d.text.toLowerCase().includes(w)?1:0),0)})).filter(d=>d.score>1).sort((a,b)=>b.score-a.score);
+    }
+    const selected=[],seen=new Set();
+    // Reserve a best source for every query before globally filling the budget.
+    // Otherwise one player's high-similarity matches can evict another's answer.
+    for(const d of [...preferred,...ranked]){if(seen.has(d.messageId))continue;selected.push(d);seen.add(d.messageId);if(selected.length===4)break;}
+    selected.sort((a,b)=>a.index-b.index);
+    report.sources=selected.map(({text,...d})=>d);
+    report.sourceExcerpts=selected.map(d=>({messageId:d.messageId,index:d.index,text:d.text}));
+    const text=selected.length?'Подтверждённые выдержки из архива ЭТОЙ комнаты (исторические события, не новые действия; при отсутствии ответа не выдумывай):\n'+selected.map(d=>`[Сообщение ${d.index+1}; ${d.messageId}] ${d.text}`).join('\n\n'):'';
+    return {retrieval,report,warnings,text};
+  }
+  async function compactRound(state,chat,{signal,onProgress=()=>{}}={}){
+    const posts=roundMessages(chat),connection=getConnection(state,chat),window=Number(connection.contextWindow)||8192;
+    const capacity=Math.max(600,Math.floor((window-Math.min(Number(connection.maxTokens)||1024,window/2))*.42)*3);
+    if(posts.reduce((n,m)=>n+m.content.length,0)<=capacity)return {messages:posts,compressed:[]};
+    const perPost=Math.max(150,Math.floor(capacity/Math.max(1,posts.length))),compressed=[],messages=[];
+    for(const [i,m] of posts.entries()){
+      signal?.throwIfAborted();onProgress(`Действия игроков: ${i+1} из ${posts.length}`);
+      const key=fingerprint('source-v3\0'+m.content+'\0'+perPost),roomId=chat.id.slice(5),room=find(getState(),roomId);
+      let summary=room?.roundDigests?.[key];
+      if(!summary){
+        // Use original sentences, never a fabricated answer from a weak utility
+        // model. Questions, numbers and intentions compete within EACH player's
+        // budget; repeated scenery is removed before any source is omitted.
+        summary=extractiveProtocol(m.content,perPost).trim();
+        if(!summary)throw new Error('Не удалось собрать действия игрока.');
+        const fresh=getState(),target=find(fresh,roomId);if(!target)throw new Error('Комната удалена.');
+        target.roundDigests={...target.roundDigests,[key]:summary};target.roundDigests=Object.fromEntries(Object.entries(target.roundDigests).slice(-100));saveState(fresh);
+      }
+      messages.push({...m,content:`${m.name||'Игрок'} (${m.personaName||m.name||'Игрок'}) — выдержки из длинного поста (действия и вопросы игрока, не ответы NPC):\n${summary}`});compressed.push(m.id);
+    }
+    return {messages,compressed};
+  }
+  return {summarize,maintain,recall,compactRound,validMemory};
+}

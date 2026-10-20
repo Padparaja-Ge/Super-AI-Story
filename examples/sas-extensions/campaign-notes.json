@@ -1,0 +1,24 @@
+{
+  "manifest": {
+    "apiVersion": 2,
+    "id": "campaign-notes",
+    "name": "Заметки кампании",
+    "version": "1.0.0",
+    "description": "Отдельные заметки по историям и кампаниям, своя страница и команда в верхней панели.",
+    "frontend": "index.js",
+    "backend": "server.mjs",
+    "styles": [
+      "style.css"
+    ],
+    "modes": [
+      "dnd",
+      "custom"
+    ]
+  },
+  "files": {
+    "index.js": "export function activate(sas) {\n  sas.registerPage({id:'notes', title:'Заметки кампании', mount(container) {\n    const panel=document.createElement('section');panel.className='campaign-notes-panel';\n    const description=document.createElement('p');description.textContent='Заметки этого дополнения не отправляются модели и не меняют память SAS.';\n    const selector=document.createElement('select');selector.setAttribute('aria-label','История для заметок');\n    const area=document.createElement('textarea');area.rows=12;area.maxLength=12000;area.placeholder='Зацепки, идеи и планы…';area.setAttribute('aria-label','Заметки');\n    const save=document.createElement('button');save.className='btn primary';save.textContent='Сохранить заметки';save.disabled=true;\n    panel.append(description,selector,area,save);container.append(panel);let disposed=false;\n    void (async()=>{\n      const [state,room,saved]=await Promise.all([sas.state.read(),sas.request('/multiplayer/status'),sas.storage.read()]);if(disposed)return;\n      const choices=[...state.chats.map(c=>({id:'chat:'+c.id,name:'RP · '+c.title})),...state.fanficProjects.map(p=>({id:'fanfic:'+p.id,name:'Фанфик · '+p.title})),...(room.running?[{id:'room:'+room.room.id,name:'Кампания · '+room.room.name}]:[])];\n      for(const choice of choices){const option=document.createElement('option');option.value=choice.id;option.textContent=choice.name;selector.append(option);}\n      const context=sas.getContext();selector.value=choices.some(c=>c.id==='chat:'+context.chatId)?'chat:'+context.chatId:choices[0]?.id||'';\n      const show=async()=>{const current=await sas.storage.read();if(!disposed)area.value=current.value.notes?.[selector.value]||'';};\n      area.value=saved.value.notes?.[selector.value]||'';selector.onchange=()=>{void show().catch(e=>sas.notify(e.message,true));};save.disabled=!choices.length;\n      save.onclick=async()=>{save.disabled=true;try{const key=selector.value,text=area.value;await sas.storage.update(value=>{value.notes||={};value.notes[key]=text;});sas.notify('Заметки сохранены отдельно от памяти.');}catch(e){sas.notify(e.message,true);}finally{if(!disposed)save.disabled=false;}};\n    })().catch(error=>sas.notify(error.message,true));\n    return ()=>{disposed=true;save.onclick=null;selector.onchange=null;panel.remove();};\n  }});\n  sas.registerCommand({id:'open',title:'Заметки',slot:'topbar',run:()=>sas.navigate('extension:campaign-notes/notes')});\n}\n",
+    "server.mjs": "export function activate(sas) {\n  sas.route('get','/status',async(req,res)=>res.json({id:sas.id,apiVersion:sas.apiVersion}));\n  // This is a style instruction, not the player's stored private notes.\n  sas.onPrompt(()=> 'Подтверждённые результаты движка неизменны; передай их в повествовании без повторного расчёта.',{modes:['dnd','custom']});\n}\n",
+    "style.css": ".campaign-notes-panel{display:grid;gap:16px;padding:24px;border:1px solid var(--border);border-radius:18px;max-width:900px}.campaign-notes-panel textarea{min-height:240px;resize:vertical}.campaign-notes-panel button{justify-self:start}\n",
+    "LICENSE.md": "# Заметки кампании — пример расширения SAS\n\nCopyright 2026 Padparaja. Developers: Padparaja-Ge and Wenzeslaus-first.\n\nLicensed under the Apache License, Version 2.0. Full license: https://www.apache.org/licenses/LICENSE-2.0 .\n\nThis example is provided without warranties. Retain applicable copyright and license notices when redistributing.\n"
+  }
+}

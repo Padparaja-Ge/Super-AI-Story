@@ -1,0 +1,8 @@
+// Browser-only recovery: no invitation, resume key, microphone or audio data.
+export function createBrowserRecovery(){
+  let dbPromise,timer,pending,allowed=true,enabled=true;try{enabled=localStorage.getItem('sas-room-recovery-enabled')!=='false';}catch{}
+  function database(){return dbPromise||=(new Promise((resolve,reject)=>{const req=indexedDB.open('sas-room-recovery',1);req.onupgradeneeded=()=>req.result.createObjectStore('campaigns',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);}));}
+  async function put(bundle){const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction('campaigns','readwrite');tx.objectStore('campaigns').put({id:bundle.room.id,at:Date.now(),bundle});tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});}
+  async function flush(){clearTimeout(timer);timer=undefined;if(!pending)return;if(!enabled||!allowed){pending=undefined;return;}const bundle=pending;pending=undefined;await put(bundle);}
+  return {enabled:()=>enabled,setAllowed(value){allowed=!!value;if(!allowed){clearTimeout(timer);timer=undefined;pending=undefined;}},setEnabled(value){enabled=!!value;try{localStorage.setItem('sas-room-recovery-enabled',String(enabled));}catch{}if(!enabled){clearTimeout(timer);timer=undefined;pending=undefined;}},checkpoint(bundle){if(!enabled||!allowed)return;pending=bundle;if(!timer)timer=setTimeout(()=>{void flush().catch(()=>{});},1500);},flush,async latest(){const db=await database();return new Promise((resolve,reject)=>{const req=db.transaction('campaigns').objectStore('campaigns').getAll();req.onsuccess=()=>resolve(req.result.sort((a,b)=>b.at-a.at)[0]?.bundle);req.onerror=()=>reject(req.error);});}};
+}

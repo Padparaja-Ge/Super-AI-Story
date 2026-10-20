@@ -1,0 +1,11 @@
+{
+  "apiVersion": 2,
+  "id": "campaign-notes",
+  "name": "Заметки кампании",
+  "version": "1.0.0",
+  "description": "Отдельные заметки по историям и кампаниям, своя страница и команда в верхней панели.",
+  "frontend": "index.js",
+  "backend": "server.mjs",
+  "styles": ["style.css"],
+  "modes": ["dnd", "custom"]
+}

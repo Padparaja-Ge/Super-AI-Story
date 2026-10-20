@@ -1,0 +1,108 @@
+.room-setup-panel{max-width:650px;margin:24px auto}.room-lore-summary,.room-turn-summary{padding:12px 18px;border:1px solid var(--border);border-radius:12px;margin:12px 0;overflow-wrap:anywhere}.room-tools{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;align-items:center}.room-tools select{max-width:100px;padding:8px;background:var(--panel);color:inherit;border:1px solid var(--border);border-radius:8px}.room-member{display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);padding:14px 0;overflow-wrap:anywhere}.room-member .btn{font-size:12px;padding:7px 9px}.room-scene-image{max-width:100%;max-height:600px;display:block;margin-top:12px;border-radius:12px}.room-message .message-byline{display:flex;flex-wrap:wrap;justify-content:space-between;gap:9px}.room-message .message-byline .btn{font-size:11px;padding:5px 9px}.room-controls .checkbox-row{margin:10px 0}.local-rewrite-page{height:100dvh;overflow:auto;max-width:850px;margin:auto}.room-composer .btn{align-self:flex-end}.room-controls>.panel{min-width:0}.room-chat{min-width:0}.room-turn-summary strong{color:var(--accent)}@media(max-width:900px){.room-grid{grid-template-columns:minmax(0,1fr)}.room-controls{display:grid;grid-template-columns:1fr}.room-invitation{flex-wrap:wrap}.room-invitation .grow{display:none}.room-composer{flex-wrap:wrap}.room-composer textarea{flex-basis:100%}.room-tools .btn{white-space:normal}.room-messages{max-height:55dvh}}
+
+/* D&D and custom tabletop rooms use their own workspace; RP keeps its layout. */
+.room-invitation-panel{margin:12px 0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.room-invitation-panel>summary,.room-settings-card>summary{cursor:pointer;padding:13px 16px;font-size:calc(14px * var(--font-scale,1));font-weight:700;overflow-wrap:anywhere}
+.room-invitation-panel>.room-invitation{margin:0;border:0;border-top:1px solid var(--border);border-radius:0 0 12px 12px}
+.room-context-panel[hidden]{display:none}
+.room-context-panel .panel{margin-bottom:12px}
+.room-context-panel .panel>div{margin:12px 0}
+.room-book-options{max-height:260px;overflow:auto;overscroll-behavior:contain;padding-right:5px;margin:12px 0}
+.room-settings-card{padding:0!important}
+.room-settings-card[open]{padding:0 16px 16px!important}
+.room-settings-card[open]>summary{margin:0 -16px 12px}
+.room-settings-card h3{margin:16px 0 6px}
+.room-controls details.panel>summary{cursor:pointer}
+.room-turn-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface)}
+.room-turn-summary>div:first-child{flex:1;min-width:180px}
+.room-turn-resources{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.room-turn-resources>span{font-size:calc(12px * var(--font-scale,1));padding:6px 9px;border-radius:7px;background:var(--surface-2);color:var(--muted)}
+.room-turn-resources b{color:var(--text,var(--c-e6e5ef,#e6e5ef));font-weight:650}
+.room-incomplete-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 7%,var(--surface));padding:14px 16px;margin:12px 0}
+.room-incomplete-banner strong{font-size:calc(14px * var(--font-scale,1))}
+.room-incomplete-banner p{font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
+.room-message-incomplete{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);color:var(--accent);font-size:calc(12px * var(--font-scale,1))}
+.room-panel-navigation{display:flex;gap:8px;border-bottom:1px solid var(--border);padding:10px 0 14px;margin-top:12px;overflow:auto;overscroll-behavior:contain}
+.room-panel-navigation>button,.adventure-action-tabs>button{display:inline-flex;justify-content:center;align-items:center;gap:8px;flex:1;border:1px solid var(--border);border-radius:9px;padding:10px 14px;background:var(--surface);color:var(--muted);font-size:calc(13px * var(--font-scale,1));font-weight:650;white-space:nowrap}
+.room-panel-navigation>button.active,.adventure-action-tabs>button.active{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:var(--accent);color:var(--accent)}
+.multiplayer-page .tactical-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,340px)!important;align-items:start;gap:18px}
+.tactical-workspace>.room-chat{grid-column:1;grid-row:1}
+.tactical-workspace>.room-turn-panel{grid-column:2;grid-row:1;min-width:0}
+.tactical-workspace>.room-turn-panel>.panel{margin:0}
+.tactical-workspace>.room-map-panel,.tactical-workspace>.room-controls{display:none;min-width:0}
+.tactical-workspace[data-panel="turn"]{grid-template-columns:minmax(0,820px)!important;justify-content:center}
+.tactical-workspace[data-panel="turn"]>.room-turn-panel{grid-column:1;display:block}
+.tactical-workspace[data-panel="turn"]>.room-chat{display:none}
+.tactical-workspace[data-panel="map"],.tactical-workspace[data-panel="settings"]{grid-template-columns:minmax(0,1fr)!important}
+.tactical-workspace[data-panel="map"]>.room-chat,.tactical-workspace[data-panel="map"]>.room-turn-panel,.tactical-workspace[data-panel="settings"]>.room-chat,.tactical-workspace[data-panel="settings"]>.room-turn-panel{display:none}
+.tactical-workspace[data-panel="map"]>.room-map-panel{display:block;max-width:1000px;width:100%;margin:auto}
+.tactical-workspace[data-panel="settings"]>.room-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;grid-column:1}
+.tactical-workspace .room-chat{padding:0;overflow:hidden}
+.room-chat-heading{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:17px 20px;border-bottom:1px solid var(--border)}
+.room-chat-heading h2{font-size:calc(17px * var(--font-scale,1))}
+.tactical-workspace .room-messages{max-height:60dvh;min-height:210px;padding:20px}
+.tactical-workspace .room-composer,.tactical-workspace .room-tools,.tactical-workspace .room-chat>p,.tactical-workspace .room-local-model{margin:10px 16px}
+.tactical-workspace .room-composer{display:flex;gap:10px;align-items:flex-end}
+.tactical-workspace .room-composer textarea{flex:1;min-height:60px;max-height:180px;padding:9px 12px;line-height:1.6}
+.room-local-model>summary{cursor:pointer;font-size:calc(12px * var(--font-scale,1));color:var(--muted);margin-bottom:9px}
+.room-local-model .field{margin-bottom:10px}
+.adventure-roster{display:grid;gap:12px}
+.adventure-roster-heading{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.adventure-roster h4{font-size:calc(13px * var(--font-scale,1));margin:0 0 8px}
+.adventure-own-resources{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.adventure-own-resources>span{display:grid;gap:3px;padding:8px 7px;border:1px solid var(--border);border-radius:8px;font-size:calc(11px * var(--font-scale,1));color:var(--muted);text-align:center}
+.adventure-own-resources strong{font-size:calc(14px * var(--font-scale,1));color:var(--text,var(--c-e6e5ef,#e6e5ef))}
+.adventure-roster details>summary{cursor:pointer;font-size:calc(12px * var(--font-scale,1));font-weight:650;overflow-wrap:anywhere}
+.adventure-party[open]{max-height:360px;overflow:auto;overscroll-behavior:contain}
+.adventure-action-tabs{display:flex;gap:5px;flex-wrap:wrap}
+.adventure-action-tabs>button{font-size:calc(11px * var(--font-scale,1));padding:8px 7px;gap:4px}
+.adventure-roster .field{margin:7px 0}
+.adventure-roster .field-label{font-size:calc(12px * var(--font-scale,1))}
+.adventure-roster .field select,.adventure-roster .field input{padding:8px 10px;font-size:calc(12px * var(--font-scale,1))}
+.adventure-action-group{padding:12px 0;border-top:1px solid var(--border);display:grid;gap:7px}
+.adventure-roster .tactical-log{max-height:60dvh}
+@media(max-width:1100px){
+ .multiplayer-page .tactical-workspace{grid-template-columns:minmax(0,1fr)!important}
+ .tactical-workspace[data-panel="chat"]>.room-turn-panel{display:none}
+ .tactical-workspace[data-panel="turn"]>.room-turn-panel{grid-column:1}
+ .tactical-workspace[data-panel="settings"]>.room-controls{grid-template-columns:minmax(0,1fr)}
+ .room-turn-resources{width:100%}
+ .room-panel-navigation{position:sticky;top:0;z-index:2;background:var(--bg);padding-top:8px}
+}
+@media(max-width:600px){
+ .room-panel-navigation{gap:6px}
+ .room-panel-navigation>button{padding:10px 8px;font-size:calc(12px * var(--font-scale,1));gap:5px}
+ .room-panel-navigation>button>svg{width:15px}
+ .room-turn-summary{padding:11px 12px;gap:9px}
+ .room-turn-summary>.btn{width:100%}
+ .room-turn-resources{gap:5px}
+ .room-turn-resources>span{padding:5px 7px;font-size:calc(11px * var(--font-scale,1))}
+ .room-incomplete-banner{flex-direction:column;align-items:stretch}
+ .room-incomplete-banner .btn{white-space:normal}
+ .room-chat-heading{padding:14px}
+ .room-chat-heading>.badge{display:none}
+ .tactical-workspace .room-messages{padding:14px;max-height:55dvh}
+ .tactical-workspace .room-composer{flex-wrap:nowrap;margin:10px}
+ .tactical-workspace .room-composer textarea{flex-basis:auto;min-height:56px;font-size:calc(13px * var(--font-scale,1))}
+ .tactical-workspace .room-composer>.btn{padding:9px;min-width:40px;font-size:0;gap:0}
+ .tactical-workspace .room-tools,.tactical-workspace .room-chat>p,.tactical-workspace .room-local-model{margin:10px}
+ .tactical-workspace .room-tools>.btn{flex:1;min-width:130px;font-size:calc(11px * var(--font-scale,1));padding:8px 10px}
+ .room-invitation-panel>.room-invitation{padding:12px;gap:9px}
+ .room-invitation select{max-width:100%;width:100%}
+ .room-map-panel .form-grid{grid-template-columns:1fr 1fr}
+}
+
+.room-book-picker{min-width:0;margin:14px 0}.room-book-picker-heading{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}.room-book-picker p{overflow-wrap:anywhere}.room-setup-books>summary{cursor:pointer;font-weight:650;margin-bottom:14px}.room-book-picker input[type="search"]{width:100%;margin-top:8px}.room-book-picker .room-book-options{margin:8px 0}.room-controls{align-items:start}
+
+.room-turn-summary-settings{display:none}
+
+.tactical-workspace>.room-journal-panel{display:none}
+.tactical-workspace[data-panel="log"]{display:block!important}
+.tactical-workspace[data-panel="log"]>.room-chat,.tactical-workspace[data-panel="log"]>.room-turn-panel{display:none}
+.tactical-workspace[data-panel="log"]>.room-journal-panel{display:block;max-width:1000px;margin:auto}
+.calculation-journal{min-width:0}.calculation-journal h3{margin:0 0 6px}.calculation-journal>header{margin-bottom:14px}
+.calculation-entries{max-height:65dvh;overflow:auto;overscroll-behavior:contain;padding-right:4px}
+.calculation-entry{border:1px solid var(--border);border-radius:10px;padding:12px;margin:0 0 10px;background:var(--surface);overflow-wrap:anywhere}
+.calculation-entry p{margin:8px 0 0;line-height:1.6;white-space:pre-wrap;font-variant-numeric:tabular-nums}
+.calculation-damage{border-top:1px solid var(--border);padding-top:8px}.calculation-hit{color:#7ec69b}.calculation-miss{color:var(--muted)}
+@media(max-width:520px){.room-panel-navigation>button{padding:10px 5px;min-width:0}.room-panel-navigation>button>svg{display:none}.calculation-journal .form-grid{grid-template-columns:1fr}.calculation-entry{padding:10px}}

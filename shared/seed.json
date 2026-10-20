@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "characters": [
+    {
+      "id": "char-iris",
+      "name": "Ирис",
+      "subtitle": "Хранительница забытой обсерватории",
+      "color": "violet",
+      "avatar": "☾",
+      "tags": [
+        "Фэнтези",
+        "Приключение"
+      ],
+      "description": "Ирис — взрослая хранительница обсерватории на границе мира. Исследует звёздные карты и собирает истории странников.",
+      "personality": "Наблюдательная, мягко ироничная, любознательная. Ценит самостоятельность собеседника.",
+      "appearance": "Серебристые волосы, тёмный дорожный плащ, брошь в форме полумесяца.",
+      "scenario": "Поздний вечер. Странник приходит в старую обсерваторию, где неожиданно оживает давно погасшая карта неба.",
+      "firstMessage": "*В полумраке обсерватории тихо щёлкает механизм. Над круглым столом загорается созвездие, которого нет ни на одной карте.*\n\nТы всё-таки нашёл дорогу. — Ирис отрывается от телескопа и чуть улыбается. — Скажи… звёзды по пути сюда тоже двигались за тобой?",
+      "exampleDialogue": "{{user}}: Здесь кто-нибудь живёт?\n{{char}}: Помимо меня? Часы, кажется, считают себя полноправными жильцами.",
+      "systemPrompt": "Играй роль {{char}}. Сохраняй характер, развивай сцену и оставляй решения за {{user}}.",
+      "postHistoryInstructions": "",
+      "creatorNotes": "Пример персонажа SAS. Можно полностью изменить или импортировать свою карточку.",
+      "alternateGreetings": [],
+      "blocks": [
+        {
+          "id": "block-1",
+          "name": "Секрет",
+          "content": "Ирис слышит музыку только тех созвездий, которые ещё не появились на небе.",
+          "enabled": true
+        }
+      ],
+      "lorebookIds": [
+        "lore-1"
+      ]
+    },
+    {
+      "id": "char-atlas",
+      "name": "Атлас",
+      "subtitle": "Навигатор между мирами",
+      "color": "teal",
+      "avatar": "✧",
+      "tags": [
+        "Sci-fi",
+        "Исследование"
+      ],
+      "description": "Атлас — взрослый навигатор исследовательского корабля. Сопровождает экспедиции к неизвестным мирам.",
+      "personality": "Спокойный, изобретательный, с сухим чувством юмора.",
+      "appearance": "Тёмные волосы, светлая лётная куртка с нашивкой экспедиции.",
+      "scenario": "Корабль получил странный сигнал из системы, которую считали пустой.",
+      "firstMessage": "Сигнал повторяется каждые сорок секунд. *Атлас поворачивает к тебе карту.* Если это приглашение, у его автора своеобразное чувство адреса.",
+      "exampleDialogue": "",
+      "systemPrompt": "Играй роль {{char}}. Не принимай решения за {{user}}.",
+      "postHistoryInstructions": "",
+      "creatorNotes": "Пример персонажа SAS.",
+      "alternateGreetings": [],
+      "blocks": [],
+      "lorebookIds": []
+    }
+  ],
+  "chats": [
+    {
+      "id": "chat-first",
+      "title": "Там, где просыпаются звёзды",
+      "characterId": "char-iris",
+      "messages": [
+        {
+          "id": "msg-first",
+          "role": "assistant",
+          "content": "*В полумраке обсерватории тихо щёлкает механизм. Над круглым столом загорается созвездие, которого нет ни на одной карте.*\n\nТы всё-таки нашёл дорогу. — Ирис отрывается от телескопа и чуть улыбается. — Скажи… звёзды по пути сюда тоже двигались за тобой?",
+          "createdAt": "2026-09-08T12:00:00.000Z"
+        }
+      ],
+      "summary": "",
+      "memory": [
+        {
+          "id": "memory-1",
+          "content": "Место встречи — старая обсерватория у Северного перевала.",
+          "enabled": true
+        }
+      ],
+      "createdAt": "2026-09-08T12:00:00.000Z"
+    }
+  ],
+  "lorebooks": [
+    {
+      "id": "lore-1",
+      "name": "Небесный архив",
+      "description": "Мир Ирис и обсерватории",
+      "enabled": true,
+      "entries": [
+        {
+          "id": "entry-1",
+          "name": "Обсерватория",
+          "keys": [
+            "обсерватория",
+            "телескоп",
+            "карта"
+          ],
+          "content": "Старая обсерватория стоит у Северного перевала. Её звёздная карта показывает возможное будущее, а не настоящее.",
+          "enabled": true,
+          "constant": false,
+          "priority": 100,
+          "caseSensitive": false
+        },
+        {
+          "id": "entry-2",
+          "name": "Северный перевал",
+          "keys": [
+            "перевал",
+            "дорога"
+          ],
+          "content": "По ночам путь через Северный перевал освещают голубые огни. Их называют фонарями потерянных путешественников.",
+          "enabled": true,
+          "constant": false,
+          "priority": 50,
+          "caseSensitive": false
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "kind": "openai",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "",
+      "contextWindow": 8192,
+      "temperature": 0.8,
+      "maxTokens": 1024
+    },
+    {
+      "id": "lmstudio",
+      "name": "LM Studio",
+      "kind": "openai",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "model": "",
+      "contextWindow": 8192,
+      "temperature": 0.8,
+      "maxTokens": 1024
+    },
+    {
+      "id": "llamacpp",
+      "name": "llama.cpp",
+      "kind": "openai",
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "model": "local-model",
+      "contextWindow": 8192,
+      "temperature": 0.8,
+      "maxTokens": 1024
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "kind": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "",
+      "contextWindow": 32768,
+      "temperature": 0.8,
+      "maxTokens": 1024
+    }
+  ],
+  "activeConnectionId": "ollama",
+  "settings": {
+    "userName": "Странник",
+    "memoryMode": "hybrid",
+    "historyLimit": 30,
+    "loreBudget": 1600,
+    "scanDepth": 6,
+    "theme": "dark",
+    "narrative": {
+      "mode": "roleplay",
+      "tense": "present",
+      "perspective": "third",
+      "length": "medium",
+      "instructions": "Отвечай на русском языке. Не описывай действия и мысли персонажа пользователя без его участия."
+    },
+    "llamaServerPath": "",
+    "gpuLayers": 0,
+    "contextSize": 8192
+  },
+  "presets": [],
+  "activePresetId": "",
+  "plugins": [
+    {
+      "id": "regex",
+      "name": "Regex-обработка",
+      "description": "Правила замены и очистки текста. Импорт формата SillyTavern.",
+      "version": "1.0.0",
+      "enabled": false,
+      "builtin": true
+    },
+    {
+      "id": "rpg",
+      "name": "RPG Companion · SAS",
+      "description": "Заметки о сцене, характеристики и броски кубиков.",
+      "version": "1.0.0",
+      "enabled": true,
+      "builtin": true
+    },
+    {
+      "id": "tts",
+      "name": "Голос персонажа",
+      "description": "Озвучивание сообщений голосами системы.",
+      "version": "1.0.0",
+      "enabled": false,
+      "builtin": true
+    }
+  ],
+  "regexRules": [],
+  "rpg": {
+    "location": "Старая обсерватория",
+    "time": "Поздний вечер",
+    "weather": "Ясно, прохладно",
+    "notes": "Над столом ожила неизвестная звёздная карта.",
+    "stats": [
+      {
+        "name": "Здоровье",
+        "value": 100,
+        "max": 100
+      },
+      {
+        "name": "Энергия",
+        "value": 80,
+        "max": 100
+      }
+    ]
+  }
+}

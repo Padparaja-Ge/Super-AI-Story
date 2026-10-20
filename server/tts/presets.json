@@ -1,0 +1,24 @@
+[
+  {
+    "id": "f130dd36-5995-49d0-b78b-000000000001",
+    "name": "HFC · женский",
+    "gender": "female",
+    "url": "https://raw.githubusercontent.com/rhasspy/piper-samples/da672d1157136d07365790f51da3357a17cf9650/samples/en/en_US/hfc_female/medium/speaker_0.mp3",
+    "source": "https://github.com/rhasspy/piper-samples/tree/da672d1157136d07365790f51da3357a17cf9650/samples/en/en_US/hfc_female/medium",
+    "license": "CC BY-NC-SA 4.0",
+    "size": 86872,
+    "sha256": "c9682897d836ca48bad1b49392261b1383038e7dfbe5e0c1a99664dce20a4fe3",
+    "text": "A rainbow is a meteorological phenomenon that is caused by reflection, refraction and dispersion of light in water droplets resulting in a spectrum of light appearing in the sky."
+  },
+  {
+    "id": "f130dd36-5995-49d0-b78b-000000000002",
+    "name": "HFC · мужской",
+    "gender": "male",
+    "url": "https://raw.githubusercontent.com/rhasspy/piper-samples/da672d1157136d07365790f51da3357a17cf9650/samples/en/en_US/hfc_male/medium/speaker_0.mp3",
+    "source": "https://github.com/rhasspy/piper-samples/tree/da672d1157136d07365790f51da3357a17cf9650/samples/en/en_US/hfc_male/medium",
+    "license": "CC BY-NC-SA 4.0",
+    "size": 93221,
+    "sha256": "2127dd9329b89d98c22bad87bd16c3f6c4aebb8d74323789fcd353fce5c313a6",
+    "text": "A rainbow is a meteorological phenomenon that is caused by reflection, refraction and dispersion of light in water droplets resulting in a spectrum of light appearing in the sky."
+  }
+]

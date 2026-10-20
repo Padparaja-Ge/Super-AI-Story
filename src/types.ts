@@ -1,0 +1,33 @@
+export type Block = { id: string; name: string; content: string; enabled: boolean };
+export type Character = { id: string; name: string; subtitle: string; color: string; avatar: string; tags: string[]; description: string; personality: string; appearance: string; scenario: string; firstMessage: string; exampleDialogue: string; systemPrompt: string; postHistoryInstructions: string; creatorNotes: string; alternateGreetings: string[]; blocks: Block[]; [key: string]: unknown };
+export type Persona = {level?:number;skills?:any[];inventory?:any[];spells?:any[];kind?:string;className?:string;abilities?:Record<string,number>;id:string;name:string;description:string;appearance:string;personality:string;avatar:string};
+export type Scene = {location:string;time:string;weather:string;notes:string;stats:{name:string;value:number;max:number}[];autoUpdate:boolean};
+export type MemorySettings = {autoSummary?:boolean;summaryInterval?:number;vectorMemory?:boolean;memoryBudget?:number;memoryMode:string;historyLimit:number;loreBudget:number;scanDepth:number};
+export type Message = {id: string; role: 'user'|'assistant'|'system'; content: string; createdAt: string; swipes?: string[];swipeStates?:{interrupted:boolean;reason?:'length'|'network'|'stopped'|'repetition'}[]; swipeIndex?: number; interrupted?: boolean;interruptionReason?:'length'|'network'|'stopped'|'repetition';originalContent?:string;translatedContent?:string;translationLanguage?:string;personaId?:string};
+export type Chat = {connectionId?:string;id: string; title: string; characterId: string; personaId:string;scene:Scene;memorySettings:MemorySettings;messages: Message[]; summary: string; memory: {id: string; content: string; enabled: boolean; category?: string;title?:string;automatic?:boolean;order?:number}[]; createdAt: string};
+export type GenerationTask = {id:string;resumeMessageId?:string;chatId?:string;wizardSessionId?:string;fanficProjectId?:string;episodeId?:string;kind:string;status:string;stage:string;text:string;error?:string;warnings?:string[]};
+export type StoryImage = {id:string;chatId:string;fanficProjectId?:string;episodeId?:string;prompt:string;status:string;error?:string;files:string[];createdAt:string;workflowName:string;model:string};
+export type ComfySettings = {mapBaseUrl?:string;mapPromptVersion?:number;mapModel?:string;mapPositivePrefix?:string;mapNegative?:string;mapWorkflow?:Record<string,any>;mapWorkflowName?:string;positivePrefix:string;width:number;height:number;promptVersion:number;baseUrl:string;workflow:Record<string,any>;workflowName:string;positiveNode:string;positiveInput:string;negativeNode:string;negativeInput:string;modelNode:string;modelInput:string;model:string;seedNode:string;seedInput:string;negative:string;contextMessages:number;promptInstructions:string};
+export type LoreEntry = {id: string; name: string; keys: string[]; content: string; enabled: boolean; constant: boolean; priority: number; caseSensitive: boolean; [key: string]: unknown};
+export type Lorebook = {id: string; name: string; description: string; enabled: boolean; entries: LoreEntry[]};
+export type Connection = {id: string; name: string; kind: string; baseUrl: string; model: string; contextWindow: number; temperature: number; maxTokens: number};
+export type Plugin = {id: string; name: string; description: string; version: string; enabled: boolean; builtin?: boolean; prompt?: string};
+export type Preset = {id: string; name: string; prompts?: {identifier: string; name: string; content: string; role?: string; enabled?: boolean}[]; [key: string]: unknown};
+export type AppState = {
+  fanficProjects:any[];
+  storybooks:any[];version: number; revision:number;wizardSessions:WizardSession[];personas:Persona[];images:StoryImage[];characters: Character[]; chats: Chat[]; lorebooks: Lorebook[]; connections: Connection[]; activeConnectionId: string;
+  settings: {speech?:Record<string,any>;localRpAdaptive?:boolean;localRuntime?:Record<string,any>;localSampling?:Record<string,any>;moeAuto?:boolean;embeddings?:{connectionId:string;model:string;threshold:number;topK:number};wizard:{connectionId:string;detailed:boolean;maxTokens:number;temperature:number;instructions:string};userName: string; memoryMode: string; historyLimit: number; loreBudget: number; scanDepth: number; theme: string; narrative: {mode: string; tense: string; perspective: string; length: string; instructions: string}; llamaServerPath: string; localDevice?:string;localEmbeddings?:boolean;embeddingModelPath?:string;embeddingDevice?:string;embeddingContext?:number; gpuLayers: number|string; contextSize: number;translation:{enabled:boolean;provider:string;sourceLanguage:string;modelLanguage:string;displayLanguage:string;outgoing:boolean;incoming:boolean;translationFallback:boolean;baseUrl:string};grammar:{enabled:boolean;language:string;baseUrl:string;userName?:string};appearance:{fontScale:number;colors:Record<string,string>};comfy:ComfySettings};
+  presets: Preset[]; activePresetId: string; plugins: Plugin[]; regexRules: Record<string, unknown>[];
+  rpg: {location: string; time: string; weather: string; notes: string; stats: {name: string; value: number; max: number}[]};
+};
+export type WizardSession={id:string;kindHint?:string;title:string;messages:{id:string;role:string;content:string}[];status:string;stage?:string;error?:string;plan?:unknown;draft?:WizardArtifact;artifact?:WizardArtifact;applied?:{name:string;id:string;kind:string}|null};
+export type WizardArtifact={kind:'character'|'persona'|'storybook';data:Record<string,any>;summary:string;lorebooks:Lorebook[];version?:string};
+export type View = `extension:${string}`| 'fanfic'|'storybooks'|'wizard'|'chat'|'characters'|'personas'|'lore'|'memory'|'models'|'plugins'|'multiplayer'|'settings'|'appearance'|'technical';
+export type StudioProps = {state: AppState; update: (fn: (draft: AppState) => void) => void; refresh: () => Promise<void>; flush: () => Promise<void>; notify: (message: string, error?: boolean) => void;task?:GenerationTask|null};
+export const uid = () => {
+  if(typeof crypto.randomUUID==='function')return crypto.randomUUID();
+  const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+  const h=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+};
+export const clone = <T,>(v: T): T => structuredClone(v);

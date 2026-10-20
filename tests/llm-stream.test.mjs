@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {streamCompletion,countCompletionTokens} from '../server/llm.mjs';
+
+async function fixture(t,wire){
+ const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(wire);});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>new Promise(r=>{server.close(r);server.closeAllConnections();}));
+ return {model:'fixture',baseUrl:`http://127.0.0.1:${server.address().port}/v1`};
+}
+const delta=text=>'data: '+JSON.stringify({choices:[{delta:{content:text}}]})+'\n\n';
+test('Streaming EOF without a terminal marker preserves partial prose and reports interruption',async t=>{
+ const connection=await fixture(t,delta('Сцена начинается. ')+delta('Дверь открылась'));
+ let saved='';await assert.rejects(async()=>{for await(const chunk of streamCompletion(connection,'',[{role:'user',content:'continue'}]))saved+=chunk;},e=>e.code==='STREAM_INCOMPLETE');
+ assert.equal(saved,'Сцена начинается. Дверь открылась');
+});
+test('Final DONE without newline is a complete streaming response',async t=>{
+ const connection=await fixture(t,delta('Завершённая сцена.')+'data: [DONE]');let text='';
+ for await(const chunk of streamCompletion(connection,'',[{role:'user',content:'write'}]))text+=chunk;
+ assert.equal(text,'Завершённая сцена.');
+});
+test('Providers that end SSE with finish_reason instead of DONE remain compatible',async t=>{
+ const finish='data: '+JSON.stringify({choices:[{delta:{content:'Последняя фраза.'},finish_reason:'length'}]});
+ const connection=await fixture(t,finish);let reason,text='';
+ for await(const chunk of streamCompletion(connection,'',[{role:'user',content:'write'}],{onFinish:value=>{reason=value;}}))text+=chunk;
+ assert.equal(text,'Последняя фраза.');assert.equal(reason,'length');
+});
+test('Local token budget measures the same adapted template, preserving backend-only auth',async()=>{
+ const calls=[],connection={id:'sas-local',baseUrl:'http://127.0.0.1:9011/v1',promptFormat:'alpaca'};
+ const count=await countCompletionTokens(connection,'test-secret',[{role:'system',content:'Canon requirements'},{role:'user',content:'Continue the episode'}],{adaptInstruction:true,disableThinking:true,fetcher:async(url,options)=>{
+  const body=JSON.parse(options.body);calls.push({url,body,auth:options.headers.Authorization});
+  return Response.json(url.endsWith('/apply-template')?{prompt:'### Instruction:\nCanon requirements\n\nContinue the episode\n### Response:'}:{tokens:[1,2,3,4,5]});
+ }});
+ assert.equal(count,5);assert.equal(calls[0].url,'http://127.0.0.1:9011/apply-template');
+ assert.deepEqual(calls[0].body.messages,[{role:'user',content:'Canon requirements\n\nContinue the episode'}]);assert.equal(calls[0].body.chat_template_kwargs.enable_thinking,false);
+ assert.equal(calls[1].url,'http://127.0.0.1:9011/tokenize');assert.equal(calls[1].body.add_special,true);assert.equal(calls[1].body.content,'### Instruction:\nCanon requirements\n\nContinue the episode\n### Response:');
+ assert.ok(calls.every(c=>c.auth==='Bearer test-secret'));
+});
+test('External providers do not receive optional llama tokenizer calls; unavailable tokenizer falls back',async()=>{
+ let called=0;const fetcher=async()=>{called++;return new Response('',{status:404});};
+ assert.equal(await countCompletionTokens({id:'openrouter',baseUrl:'https://api.example/v1'},'',[],{fetcher}),null);assert.equal(called,0);
+ assert.equal(await countCompletionTokens({id:'sas-local',baseUrl:'http://127.0.0.1:9011/v1'},'',[],{fetcher}),null);assert.equal(called,1);
+});

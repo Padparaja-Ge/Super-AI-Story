@@ -1,0 +1,2288 @@
+[
+  {
+    "id": "c-e6e5ef",
+    "value": "#e6e5ef",
+    "label": "Основной текст",
+    "primary": true
+  },
+  {
+    "id": "c-11131b",
+    "value": "#11131b",
+    "label": "Фон студии",
+    "primary": true
+  },
+  {
+    "id": "c-181a25",
+    "value": "#181a25",
+    "label": "Панели",
+    "primary": true
+  },
+  {
+    "id": "c-1d1f2c",
+    "value": "#1d1f2c",
+    "label": "Дополнительные панели",
+    "primary": true
+  },
+  {
+    "id": "c-2a2c3c",
+    "value": "#2a2c3c",
+    "label": "Границы",
+    "primary": true
+  },
+  {
+    "id": "c-9091a8",
+    "value": "#9091a8",
+    "label": "Приглушённый текст",
+    "primary": true
+  },
+  {
+    "id": "c-b4a0f6",
+    "value": "#b4a0f6",
+    "label": "Акцент · ссылки",
+    "primary": true
+  },
+  {
+    "id": "c-9f85ed",
+    "value": "#9f85ed",
+    "label": "Акцент · выделение",
+    "primary": true
+  },
+  {
+    "id": "c-88c4b1",
+    "value": "#88c4b1",
+    "label": "Успех",
+    "primary": true
+  },
+  {
+    "id": "c-ef9ba9",
+    "value": "#ef9ba9",
+    "label": "Ошибки",
+    "primary": true
+  },
+  {
+    "id": "c-12141e",
+    "value": "#12141e",
+    "label": "Поля ввода",
+    "primary": true
+  },
+  {
+    "id": "c-303244",
+    "value": "#303244",
+    "label": "Элемент · input,textarea,select",
+    "primary": false
+  },
+  {
+    "id": "c-47485e",
+    "value": "#47485e",
+    "label": "Элемент · input:hover,textarea:hover,select:hover",
+    "primary": false
+  },
+  {
+    "id": "c-a68cde",
+    "value": "#a68cde",
+    "label": "Элемент · input:focus,textarea:focus,select:focus",
+    "primary": false
+  },
+  {
+    "id": "c-a28ae7",
+    "value": "#a28ae7",
+    "label": "Элемент · input[type=checkbox]",
+    "primary": false
+  },
+  {
+    "id": "c-676b83",
+    "value": "#676b83",
+    "label": "Элемент · input::placeholder,textarea::placeholder",
+    "primary": false
+  },
+  {
+    "id": "c-d7c9fc",
+    "value": "#d7c9fc",
+    "label": "Элемент · a:hover",
+    "primary": false
+  },
+  {
+    "id": "c-c2adff",
+    "value": "#c2adff",
+    "label": "Элемент · button:focus-visible,a:focus-visible",
+    "primary": false
+  },
+  {
+    "id": "c-9b7bdd",
+    "value": "#9b7bdd",
+    "label": "Элемент · ::selection",
+    "primary": false
+  },
+  {
+    "id": "c-393b4d",
+    "value": "#393b4d",
+    "label": "Элемент · ::-webkit-scrollbar-thumb",
+    "primary": false
+  },
+  {
+    "id": "c-37394d",
+    "value": "#37394d",
+    "label": "Кнопки · .btn",
+    "primary": false
+  },
+  {
+    "id": "c-232533",
+    "value": "#232533",
+    "label": "Обычные кнопки",
+    "primary": true
+  },
+  {
+    "id": "c-dcdae9",
+    "value": "#dcdae9",
+    "label": "Кнопки · .btn",
+    "primary": false
+  },
+  {
+    "id": "c-2d2d40",
+    "value": "#2d2d40",
+    "label": "Кнопки · .btn:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-52516a",
+    "value": "#52516a",
+    "label": "Кнопки · .btn:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-b29af0",
+    "value": "#b29af0",
+    "label": "Основные кнопки",
+    "primary": true
+  },
+  {
+    "id": "c-211733",
+    "value": "#211733",
+    "label": "Текст основных кнопок",
+    "primary": true
+  },
+  {
+    "id": "c-000000",
+    "value": "#000000",
+    "label": "Кнопки · .btn.primary",
+    "primary": false
+  },
+  {
+    "id": "c-c1aafa",
+    "value": "#c1aafa",
+    "label": "Кнопки · .btn.primary:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-eb9cac",
+    "value": "#eb9cac",
+    "label": "Кнопки · .btn.danger",
+    "primary": false
+  },
+  {
+    "id": "c-38252e",
+    "value": "#38252e",
+    "label": "Кнопки · .btn.danger",
+    "primary": false
+  },
+  {
+    "id": "c-54303e",
+    "value": "#54303e",
+    "label": "Кнопки · .btn.danger",
+    "primary": false
+  },
+  {
+    "id": "c-9c9bb2",
+    "value": "#9c9bb2",
+    "label": "Кнопки · .icon-btn",
+    "primary": false
+  },
+  {
+    "id": "c-313041",
+    "value": "#313041",
+    "label": "Кнопки · .icon-btn:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-d4c4f7",
+    "value": "#d4c4f7",
+    "label": "Кнопки · .icon-btn:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-3d3f50",
+    "value": "#3d3f50",
+    "label": "Переключатели · .toggle",
+    "primary": false
+  },
+  {
+    "id": "c-9e9eae",
+    "value": "#9e9eae",
+    "label": "Переключатели · .toggle span",
+    "primary": false
+  },
+  {
+    "id": "c-a78dde",
+    "value": "#a78dde",
+    "label": "Переключатели · .toggle.on",
+    "primary": false
+  },
+  {
+    "id": "c-f3edf9",
+    "value": "#f3edf9",
+    "label": "Переключатели · .toggle.on span",
+    "primary": false
+  },
+  {
+    "id": "c-2b293b",
+    "value": "#2b293b",
+    "label": "Метки · .badge",
+    "primary": false
+  },
+  {
+    "id": "c-b5aacd",
+    "value": "#b5aacd",
+    "label": "Метки · .badge",
+    "primary": false
+  },
+  {
+    "id": "c-96d0ba",
+    "value": "#96d0ba",
+    "label": "Метки · .badge.positive",
+    "primary": false
+  },
+  {
+    "id": "c-20352f",
+    "value": "#20352f",
+    "label": "Метки · .badge.positive",
+    "primary": false
+  },
+  {
+    "id": "c-aca5c3",
+    "value": "#aca5c3",
+    "label": "Метки · .count-badge",
+    "primary": false
+  },
+  {
+    "id": "c-2a293c",
+    "value": "#2a293c",
+    "label": "Метки · .count-badge",
+    "primary": false
+  },
+  {
+    "id": "c-8dbca9",
+    "value": "#8dbca9",
+    "label": "Элемент · .status-dot",
+    "primary": false
+  },
+  {
+    "id": "c-767583",
+    "value": "#767583",
+    "label": "Элемент · .status-dot.offline",
+    "primary": false
+  },
+  {
+    "id": "c-b5a0e7",
+    "value": "#b5a0e7",
+    "label": "Элемент · .status-dot.configured",
+    "primary": false
+  },
+  {
+    "id": "c-d3cfdf",
+    "value": "#d3cfdf",
+    "label": "Поля · .field-label",
+    "primary": false
+  },
+  {
+    "id": "c-85859e",
+    "value": "#85859e",
+    "label": "Поля · .field small",
+    "primary": false
+  },
+  {
+    "id": "c-aba4bd",
+    "value": "#aba4bd",
+    "label": "Элемент · .inline-note",
+    "primary": false
+  },
+  {
+    "id": "c-201e2e",
+    "value": "#201e2e",
+    "label": "Элемент · .inline-note",
+    "primary": false
+  },
+  {
+    "id": "c-343044",
+    "value": "#343044",
+    "label": "Элемент · .inline-note",
+    "primary": false
+  },
+  {
+    "id": "c-b09acf",
+    "value": "#b09acf",
+    "label": "Элемент · .inline-note svg",
+    "primary": false
+  },
+  {
+    "id": "c-a99bcc",
+    "value": "#a99bcc",
+    "label": "Элемент · .eyebrow",
+    "primary": false
+  },
+  {
+    "id": "c-373147",
+    "value": "#373147",
+    "label": "Элемент · .empty-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-353042",
+    "value": "#353042",
+    "label": "Элемент · .empty-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-1b1b28",
+    "value": "#1b1b28",
+    "label": "Элемент · .empty-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-ad99d5",
+    "value": "#ad99d5",
+    "label": "Элемент · .empty-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-d3cedf",
+    "value": "#d3cedf",
+    "label": "Элемент · .empty h3",
+    "primary": false
+  },
+  {
+    "id": "c-b29ddb",
+    "value": "#b29ddb",
+    "label": "Элемент · .text-link",
+    "primary": false
+  },
+  {
+    "id": "c-d5bcff",
+    "value": "#d5bcff",
+    "label": "Элемент · .text-link:hover",
+    "primary": false
+  },
+  {
+    "id": "c-292636",
+    "value": "#292636",
+    "label": "Элемент · .tags>span",
+    "primary": false
+  },
+  {
+    "id": "c-b6a6cc",
+    "value": "#b6a6cc",
+    "label": "Элемент · .tags>span",
+    "primary": false
+  },
+  {
+    "id": "c-3b324a",
+    "value": "#3b324a",
+    "label": "Элемент · .tags>span",
+    "primary": false
+  },
+  {
+    "id": "c-cfb6f9",
+    "value": "#cfb6f9",
+    "label": "Аватар · .avatar",
+    "primary": false
+  },
+  {
+    "id": "c-585175",
+    "value": "#585175",
+    "label": "Аватар · .avatar",
+    "primary": false
+  },
+  {
+    "id": "c-30283f",
+    "value": "#30283f",
+    "label": "Аватар · .avatar",
+    "primary": false
+  },
+  {
+    "id": "c-625376",
+    "value": "#625376",
+    "label": "Аватар · .avatar",
+    "primary": false
+  },
+  {
+    "id": "c-d2a7f5",
+    "value": "#d2a7f5",
+    "label": "Аватар · .avatar",
+    "primary": false
+  },
+  {
+    "id": "c-0b061b",
+    "value": "#0b061b",
+    "label": "Аватар · .avatar.large",
+    "primary": false
+  },
+  {
+    "id": "c-477578",
+    "value": "#477578",
+    "label": "Аватар · .avatar.teal",
+    "primary": false
+  },
+  {
+    "id": "c-203a40",
+    "value": "#203a40",
+    "label": "Аватар · .avatar.teal",
+    "primary": false
+  },
+  {
+    "id": "c-b8d9d0",
+    "value": "#b8d9d0",
+    "label": "Аватар · .avatar.teal",
+    "primary": false
+  },
+  {
+    "id": "c-476769",
+    "value": "#476769",
+    "label": "Аватар · .avatar.teal",
+    "primary": false
+  },
+  {
+    "id": "c-805770",
+    "value": "#805770",
+    "label": "Аватар · .avatar.rose",
+    "primary": false
+  },
+  {
+    "id": "c-40283a",
+    "value": "#40283a",
+    "label": "Аватар · .avatar.rose",
+    "primary": false
+  },
+  {
+    "id": "c-e7b7d3",
+    "value": "#e7b7d3",
+    "label": "Аватар · .avatar.rose",
+    "primary": false
+  },
+  {
+    "id": "c-775164",
+    "value": "#775164",
+    "label": "Аватар · .avatar.rose",
+    "primary": false
+  },
+  {
+    "id": "c-8b7452",
+    "value": "#8b7452",
+    "label": "Аватар · .avatar.amber",
+    "primary": false
+  },
+  {
+    "id": "c-423529",
+    "value": "#423529",
+    "label": "Аватар · .avatar.amber",
+    "primary": false
+  },
+  {
+    "id": "c-e8cca2",
+    "value": "#e8cca2",
+    "label": "Аватар · .avatar.amber",
+    "primary": false
+  },
+  {
+    "id": "c-806a4b",
+    "value": "#806a4b",
+    "label": "Аватар · .avatar.amber",
+    "primary": false
+  },
+  {
+    "id": "c-273339",
+    "value": "#273339",
+    "label": "Аватар · .avatar.user-avatar",
+    "primary": false
+  },
+  {
+    "id": "c-3c4b53",
+    "value": "#3c4b53",
+    "label": "Аватар · .avatar.user-avatar",
+    "primary": false
+  },
+  {
+    "id": "c-adccd0",
+    "value": "#adccd0",
+    "label": "Аватар · .avatar.user-avatar",
+    "primary": false
+  },
+  {
+    "id": "c-171923",
+    "value": "#171923",
+    "label": "Боковое меню",
+    "primary": true
+  },
+  {
+    "id": "c-282b39",
+    "value": "#282b39",
+    "label": "Меню · .sidebar",
+    "primary": false
+  },
+  {
+    "id": "c-cbb3fa",
+    "value": "#cbb3fa",
+    "label": "Элемент · .brand-icon",
+    "primary": false
+  },
+  {
+    "id": "c-8f6cc6",
+    "value": "#8f6cc6",
+    "label": "Элемент · .brand-icon",
+    "primary": false
+  },
+  {
+    "id": "c-c6a2f0",
+    "value": "#c6a2f0",
+    "label": "Элемент · .brand-icon",
+    "primary": false
+  },
+  {
+    "id": "c-65517c",
+    "value": "#65517c",
+    "label": "Элемент · .brand-icon",
+    "primary": false
+  },
+  {
+    "id": "c-9291aa",
+    "value": "#9291aa",
+    "label": "Элемент · .brand-copy small",
+    "primary": false
+  },
+  {
+    "id": "c-a29cad",
+    "value": "#a29cad",
+    "label": "Элемент · .version",
+    "primary": false
+  },
+  {
+    "id": "c-3b354b",
+    "value": "#3b354b",
+    "label": "Элемент · .version",
+    "primary": false
+  },
+  {
+    "id": "c-74758e",
+    "value": "#74758e",
+    "label": "Навигация · .nav-caption",
+    "primary": false
+  },
+  {
+    "id": "c-9698ae",
+    "value": "#9698ae",
+    "label": "Навигация · .nav-item",
+    "primary": false
+  },
+  {
+    "id": "c-222430",
+    "value": "#222430",
+    "label": "Навигация · .nav-item:hover",
+    "primary": false
+  },
+  {
+    "id": "c-cfccdc",
+    "value": "#cfccdc",
+    "label": "Навигация · .nav-item:hover",
+    "primary": false
+  },
+  {
+    "id": "c-2b263e",
+    "value": "#2b263e",
+    "label": "Навигация · .nav-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-cbb6f3",
+    "value": "#cbb6f3",
+    "label": "Навигация · .nav-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-423353",
+    "value": "#423353",
+    "label": "Навигация · .nav-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-bea3f3",
+    "value": "#bea3f3",
+    "label": "Навигация · .nav-item.active:before",
+    "primary": false
+  },
+  {
+    "id": "c-98b8ab",
+    "value": "#98b8ab",
+    "label": "Метки · .nav-badge",
+    "primary": false
+  },
+  {
+    "id": "c-293a35",
+    "value": "#293a35",
+    "label": "Метки · .nav-badge",
+    "primary": false
+  },
+  {
+    "id": "c-6d7088",
+    "value": "#6d7088",
+    "label": "Элемент · .recent-header",
+    "primary": false
+  },
+  {
+    "id": "c-2a2c39",
+    "value": "#2a2c39",
+    "label": "Элемент · .recent-header",
+    "primary": false
+  },
+  {
+    "id": "c-62667d",
+    "value": "#62667d",
+    "label": "Меню · .sidebar-search",
+    "primary": false
+  },
+  {
+    "id": "c-818298",
+    "value": "#818298",
+    "label": "Элемент · .recent-item",
+    "primary": false
+  },
+  {
+    "id": "c-bcb8d1",
+    "value": "#bcb8d1",
+    "label": "Элемент · .recent-item.selected",
+    "primary": false
+  },
+  {
+    "id": "c-262635",
+    "value": "#262635",
+    "label": "Элемент · .recent-item:hover",
+    "primary": false
+  },
+  {
+    "id": "c-696079",
+    "value": "#696079",
+    "label": "Элемент · .recent-dot",
+    "primary": false
+  },
+  {
+    "id": "c-b89be4",
+    "value": "#b89be4",
+    "label": "Элемент · .selected .recent-dot",
+    "primary": false
+  },
+  {
+    "id": "c-2b2e3a",
+    "value": "#2b2e3a",
+    "label": "Элемент · .user-card",
+    "primary": false
+  },
+  {
+    "id": "c-31323d",
+    "value": "#31323d",
+    "label": "Элемент · .user-monogram",
+    "primary": false
+  },
+  {
+    "id": "c-c8c3d6",
+    "value": "#c8c3d6",
+    "label": "Элемент · .user-monogram",
+    "primary": false
+  },
+  {
+    "id": "c-74798e",
+    "value": "#74798e",
+    "label": "Элемент · .user-card small",
+    "primary": false
+  },
+  {
+    "id": "c-262937",
+    "value": "#262937",
+    "label": "Верхняя панель · .topbar",
+    "primary": false
+  },
+  {
+    "id": "c-141620",
+    "value": "#141620",
+    "label": "Верхняя панель · .topbar",
+    "primary": false
+  },
+  {
+    "id": "c-787b92",
+    "value": "#787b92",
+    "label": "Элемент · .breadcrumb",
+    "primary": false
+  },
+  {
+    "id": "c-bbb8cc",
+    "value": "#bbb8cc",
+    "label": "Элемент · .breadcrumb strong",
+    "primary": false
+  },
+  {
+    "id": "c-686e81",
+    "value": "#686e81",
+    "label": "Элемент · .save-status",
+    "primary": false
+  },
+  {
+    "id": "c-373546",
+    "value": "#373546",
+    "label": "Элемент · .connection-pill",
+    "primary": false
+  },
+  {
+    "id": "c-21212e",
+    "value": "#21212e",
+    "label": "Элемент · .connection-pill",
+    "primary": false
+  },
+  {
+    "id": "c-c0b5d5",
+    "value": "#c0b5d5",
+    "label": "Элемент · .connection-pill",
+    "primary": false
+  },
+  {
+    "id": "c-536856",
+    "value": "#536856",
+    "label": "Элемент · .toast",
+    "primary": false
+  },
+  {
+    "id": "c-29382f",
+    "value": "#29382f",
+    "label": "Элемент · .toast",
+    "primary": false
+  },
+  {
+    "id": "c-d7e7d7",
+    "value": "#d7e7d7",
+    "label": "Элемент · .toast",
+    "primary": false
+  },
+  {
+    "id": "c-382833",
+    "value": "#382833",
+    "label": "Элемент · .toast-error",
+    "primary": false
+  },
+  {
+    "id": "c-73505e",
+    "value": "#73505e",
+    "label": "Элемент · .toast-error",
+    "primary": false
+  },
+  {
+    "id": "c-f2c1c9",
+    "value": "#f2c1c9",
+    "label": "Элемент · .toast-error",
+    "primary": false
+  },
+  {
+    "id": "c-292039",
+    "value": "#292039",
+    "label": "Элемент · .page",
+    "primary": false
+  },
+  {
+    "id": "c-85879e",
+    "value": "#85879e",
+    "label": "Элемент · .section-heading p",
+    "primary": false
+  },
+  {
+    "id": "c-84889e",
+    "value": "#84889e",
+    "label": "Элемент · .tabs>button",
+    "primary": false
+  },
+  {
+    "id": "c-b49bed",
+    "value": "#b49bed",
+    "label": "Элемент · .tabs>button.active",
+    "primary": false
+  },
+  {
+    "id": "c-c1aaf1",
+    "value": "#c1aaf1",
+    "label": "Элемент · .tabs>button.active",
+    "primary": false
+  },
+  {
+    "id": "c-322b45",
+    "value": "#322b45",
+    "label": "Элемент · .tabs>button span",
+    "primary": false
+  },
+  {
+    "id": "c-6c7088",
+    "value": "#6c7088",
+    "label": "Элемент · .search-input",
+    "primary": false
+  },
+  {
+    "id": "c-252135",
+    "value": "#252135",
+    "label": "Элемент · .character-list-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-443454",
+    "value": "#443454",
+    "label": "Элемент · .character-list-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-8e87a3",
+    "value": "#8e87a3",
+    "label": "Элемент · .character-list-item small",
+    "primary": false
+  },
+  {
+    "id": "c-9581b5",
+    "value": "#9581b5",
+    "label": "Элемент · .character-list-item>svg",
+    "primary": false
+  },
+  {
+    "id": "c-6f738c",
+    "value": "#6f738c",
+    "label": "Элемент · .library-note",
+    "primary": false
+  },
+  {
+    "id": "c-292c3b",
+    "value": "#292c3b",
+    "label": "Элемент · .library-note",
+    "primary": false
+  },
+  {
+    "id": "c-817293",
+    "value": "#817293",
+    "label": "Элемент · .library-note svg",
+    "primary": false
+  },
+  {
+    "id": "c-2d2d3d",
+    "value": "#2d2d3d",
+    "label": "Элемент · .editor",
+    "primary": false
+  },
+  {
+    "id": "c-353143",
+    "value": "#353143",
+    "label": "Элемент · .custom-block",
+    "primary": false
+  },
+  {
+    "id": "c-1c1b2a",
+    "value": "#1c1b2a",
+    "label": "Элемент · .custom-block",
+    "primary": false
+  },
+  {
+    "id": "c-323245",
+    "value": "#323245",
+    "label": "Элемент · .book-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-1d1f2b",
+    "value": "#1d1f2b",
+    "label": "Элемент · .book-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-9794ac",
+    "value": "#9794ac",
+    "label": "Элемент · .book-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-2a243a",
+    "value": "#2a243a",
+    "label": "Элемент · .book-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-66507e",
+    "value": "#66507e",
+    "label": "Элемент · .book-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-c0aae5",
+    "value": "#c0aae5",
+    "label": "Элемент · .book-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-8f87a3",
+    "value": "#8f87a3",
+    "label": "Элемент · .book-tabs button>span:not(.status-dot)",
+    "primary": false
+  },
+  {
+    "id": "c-46374f",
+    "value": "#46374f",
+    "label": "Элемент · .lore-entry-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-272232",
+    "value": "#272232",
+    "label": "Элемент · .lore-entry-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-7c7b91",
+    "value": "#7c7b91",
+    "label": "Элемент · .lore-entry-item small",
+    "primary": false
+  },
+  {
+    "id": "c-303144",
+    "value": "#303144",
+    "label": "Элемент · .memory-mode",
+    "primary": false
+  },
+  {
+    "id": "c-1a1c28",
+    "value": "#1a1c28",
+    "label": "Элемент · .memory-mode",
+    "primary": false
+  },
+  {
+    "id": "c-80639f",
+    "value": "#80639f",
+    "label": "Элемент · .memory-mode.active",
+    "primary": false
+  },
+  {
+    "id": "c-282137",
+    "value": "#282137",
+    "label": "Элемент · .memory-mode.active",
+    "primary": false
+  },
+  {
+    "id": "c-8a849c",
+    "value": "#8a849c",
+    "label": "Элемент · .memory-mode p",
+    "primary": false
+  },
+  {
+    "id": "c-686278",
+    "value": "#686278",
+    "label": "Элемент · .radio-circle",
+    "primary": false
+  },
+  {
+    "id": "c-bf9fea",
+    "value": "#bf9fea",
+    "label": "Элемент · .radio-circle>span",
+    "primary": false
+  },
+  {
+    "id": "c-343347",
+    "value": "#343347",
+    "label": "Элемент · .mini-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-222330",
+    "value": "#222330",
+    "label": "Элемент · .mini-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-9591a7",
+    "value": "#9591a7",
+    "label": "Элемент · .mini-tabs button",
+    "primary": false
+  },
+  {
+    "id": "c-745784",
+    "value": "#745784",
+    "label": "Элемент · .mini-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-c9abe5",
+    "value": "#c9abe5",
+    "label": "Элемент · .mini-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-30243e",
+    "value": "#30243e",
+    "label": "Элемент · .mini-tabs button.active",
+    "primary": false
+  },
+  {
+    "id": "c-1c1b28",
+    "value": "#1c1b28",
+    "label": "Элемент · .memory-edit",
+    "primary": false
+  },
+  {
+    "id": "c-2f2c3e",
+    "value": "#2f2c3e",
+    "label": "Элемент · .memory-edit textarea",
+    "primary": false
+  },
+  {
+    "id": "c-383047",
+    "value": "#383047",
+    "label": "Элемент · .about-box",
+    "primary": false
+  },
+  {
+    "id": "c-221d2e",
+    "value": "#221d2e",
+    "label": "Элемент · .about-box",
+    "primary": false
+  },
+  {
+    "id": "c-a496b7",
+    "value": "#a496b7",
+    "label": "Элемент · .about-box h2 span",
+    "primary": false
+  },
+  {
+    "id": "c-292337",
+    "value": "#292337",
+    "label": "Элемент · .provider-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-594268",
+    "value": "#594268",
+    "label": "Элемент · .provider-item.active",
+    "primary": false
+  },
+  {
+    "id": "c-8d849b",
+    "value": "#8d849b",
+    "label": "Элемент · .provider-item small",
+    "primary": false
+  },
+  {
+    "id": "c-32313f",
+    "value": "#32313f",
+    "label": "Элемент · .provider-icon",
+    "primary": false
+  },
+  {
+    "id": "c-b8aecb",
+    "value": "#b8aecb",
+    "label": "Элемент · .provider-icon",
+    "primary": false
+  },
+  {
+    "id": "c-422e3f",
+    "value": "#422e3f",
+    "label": "Элемент · .provider-icon.rose",
+    "primary": false
+  },
+  {
+    "id": "c-cfa6c9",
+    "value": "#cfa6c9",
+    "label": "Элемент · .provider-icon.rose",
+    "primary": false
+  },
+  {
+    "id": "c-282337",
+    "value": "#282337",
+    "label": "Элемент · .hf-banner",
+    "primary": false
+  },
+  {
+    "id": "c-1a1c2a",
+    "value": "#1a1c2a",
+    "label": "Элемент · .hf-banner",
+    "primary": false
+  },
+  {
+    "id": "c-393144",
+    "value": "#393144",
+    "label": "Элемент · .hf-banner",
+    "primary": false
+  },
+  {
+    "id": "c-9c93ae",
+    "value": "#9c93ae",
+    "label": "Элемент · .hf-banner p",
+    "primary": false
+  },
+  {
+    "id": "c-474056",
+    "value": "#474056",
+    "label": "Элемент · .hf-search",
+    "primary": false
+  },
+  {
+    "id": "c-a090b8",
+    "value": "#a090b8",
+    "label": "Элемент · .hf-search",
+    "primary": false
+  },
+  {
+    "id": "c-737288",
+    "value": "#737288",
+    "label": "Элемент · .search-suggestions",
+    "primary": false
+  },
+  {
+    "id": "c-363145",
+    "value": "#363145",
+    "label": "Элемент · .search-suggestions button",
+    "primary": false
+  },
+  {
+    "id": "c-242131",
+    "value": "#242131",
+    "label": "Элемент · .search-suggestions button",
+    "primary": false
+  },
+  {
+    "id": "c-a89ab9",
+    "value": "#a89ab9",
+    "label": "Элемент · .search-suggestions button",
+    "primary": false
+  },
+  {
+    "id": "c-323041",
+    "value": "#323041",
+    "label": "Элемент · .hf-model",
+    "primary": false
+  },
+  {
+    "id": "c-796183",
+    "value": "#796183",
+    "label": "Элемент · .hf-model:hover",
+    "primary": false
+  },
+  {
+    "id": "c-302839",
+    "value": "#302839",
+    "label": "Элемент · .model-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-ad95c8",
+    "value": "#ad95c8",
+    "label": "Элемент · .model-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-8e859f",
+    "value": "#8e859f",
+    "label": "Элемент · .hf-model>small",
+    "primary": false
+  },
+  {
+    "id": "c-90849d",
+    "value": "#90849d",
+    "label": "Элемент · .model-tags>span",
+    "primary": false
+  },
+  {
+    "id": "c-292331",
+    "value": "#292331",
+    "label": "Элемент · .model-tags>span",
+    "primary": false
+  },
+  {
+    "id": "c-8a839a",
+    "value": "#8a839a",
+    "label": "Элемент · .model-metrics",
+    "primary": false
+  },
+  {
+    "id": "c-302a3b",
+    "value": "#302a3b",
+    "label": "Элемент · .model-metrics",
+    "primary": false
+  },
+  {
+    "id": "c-211e2c",
+    "value": "#211e2c",
+    "label": "Элемент · .runtime-strip",
+    "primary": false
+  },
+  {
+    "id": "c-454154",
+    "value": "#454154",
+    "label": "Элемент · .runtime-icon",
+    "primary": false
+  },
+  {
+    "id": "c-9e92af",
+    "value": "#9e92af",
+    "label": "Элемент · .runtime-icon",
+    "primary": false
+  },
+  {
+    "id": "c-302c3c",
+    "value": "#302c3c",
+    "label": "Элемент · .runtime-icon",
+    "primary": false
+  },
+  {
+    "id": "c-a2d5c0",
+    "value": "#a2d5c0",
+    "label": "Элемент · .runtime-icon.ready",
+    "primary": false
+  },
+  {
+    "id": "c-283d36",
+    "value": "#283d36",
+    "label": "Элемент · .runtime-icon.ready",
+    "primary": false
+  },
+  {
+    "id": "c-8e849e",
+    "value": "#8e849e",
+    "label": "Элемент · .runtime-strip p",
+    "primary": false
+  },
+  {
+    "id": "c-353142",
+    "value": "#353142",
+    "label": "Элемент · .local-list",
+    "primary": false
+  },
+  {
+    "id": "c-1d1c29",
+    "value": "#1d1c29",
+    "label": "Элемент · .local-model",
+    "primary": false
+  },
+  {
+    "id": "c-363040",
+    "value": "#363040",
+    "label": "Элемент · .local-model",
+    "primary": false
+  },
+  {
+    "id": "c-9884b1",
+    "value": "#9884b1",
+    "label": "Элемент · .local-model>svg",
+    "primary": false
+  },
+  {
+    "id": "c-797286",
+    "value": "#797286",
+    "label": "Элемент · .local-model small",
+    "primary": false
+  },
+  {
+    "id": "c-a399b2",
+    "value": "#a399b2",
+    "label": "Элемент · .local-model>span",
+    "primary": false
+  },
+  {
+    "id": "c-a9a0b9",
+    "value": "#a9a0b9",
+    "label": "Элемент · .runtime-logs pre",
+    "primary": false
+  },
+  {
+    "id": "c-43354e",
+    "value": "#43354e",
+    "label": "Панели · .downloads-panel",
+    "primary": false
+  },
+  {
+    "id": "c-211c2b",
+    "value": "#211c2b",
+    "label": "Панели · .downloads-panel",
+    "primary": false
+  },
+  {
+    "id": "c-352b40",
+    "value": "#352b40",
+    "label": "Элемент · .download-item",
+    "primary": false
+  },
+  {
+    "id": "c-9e8fae",
+    "value": "#9e8fae",
+    "label": "Элемент · .download-item small",
+    "primary": false
+  },
+  {
+    "id": "c-b091d5",
+    "value": "#b091d5",
+    "label": "Элемент · .download-item progress",
+    "primary": false
+  },
+  {
+    "id": "c-3e324a",
+    "value": "#3e324a",
+    "label": "Элемент · .download-item progress::-webkit-progress-bar",
+    "primary": false
+  },
+  {
+    "id": "c-a98ace",
+    "value": "#a98ace",
+    "label": "Элемент · .download-item progress::-webkit-progress-value",
+    "primary": false
+  },
+  {
+    "id": "c-363041",
+    "value": "#363041",
+    "label": "Элемент · .model-file",
+    "primary": false
+  },
+  {
+    "id": "c-9888a7",
+    "value": "#9888a7",
+    "label": "Элемент · .model-file small",
+    "primary": false
+  },
+  {
+    "id": "c-6a414d",
+    "value": "#6a414d",
+    "label": "Элемент · .error-box",
+    "primary": false
+  },
+  {
+    "id": "c-392732",
+    "value": "#392732",
+    "label": "Элемент · .error-box",
+    "primary": false
+  },
+  {
+    "id": "c-e4aabb",
+    "value": "#e4aabb",
+    "label": "Элемент · .error-box",
+    "primary": false
+  },
+  {
+    "id": "c-b5a1c9",
+    "value": "#b5a1c9",
+    "label": "Элемент · .loading-row",
+    "primary": false
+  },
+  {
+    "id": "c-373044",
+    "value": "#373044",
+    "label": "Элемент · .plugin-card",
+    "primary": false
+  },
+  {
+    "id": "c-1c1b29",
+    "value": "#1c1b29",
+    "label": "Элемент · .plugin-card",
+    "primary": false
+  },
+  {
+    "id": "c-5c456e",
+    "value": "#5c456e",
+    "label": "Элемент · .plugin-card.enabled",
+    "primary": false
+  },
+  {
+    "id": "c-282032",
+    "value": "#282032",
+    "label": "Элемент · .plugin-card.enabled",
+    "primary": false
+  },
+  {
+    "id": "c-352741",
+    "value": "#352741",
+    "label": "Элемент · .plugin-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-c3a7dd",
+    "value": "#c3a7dd",
+    "label": "Элемент · .plugin-symbol",
+    "primary": false
+  },
+  {
+    "id": "c-3f302a",
+    "value": "#3f302a",
+    "label": "Элемент · .plugin-symbol.amber",
+    "primary": false
+  },
+  {
+    "id": "c-d7b38e",
+    "value": "#d7b38e",
+    "label": "Элемент · .plugin-symbol.amber",
+    "primary": false
+  },
+  {
+    "id": "c-283b3b",
+    "value": "#283b3b",
+    "label": "Элемент · .plugin-symbol.teal",
+    "primary": false
+  },
+  {
+    "id": "c-a0c8bf",
+    "value": "#a0c8bf",
+    "label": "Элемент · .plugin-symbol.teal",
+    "primary": false
+  },
+  {
+    "id": "c-7f758e",
+    "value": "#7f758e",
+    "label": "Элемент · .plugin-title>span",
+    "primary": false
+  },
+  {
+    "id": "c-908299",
+    "value": "#908299",
+    "label": "Элемент · .plugin-card>p",
+    "primary": false
+  },
+  {
+    "id": "c-484050",
+    "value": "#484050",
+    "label": "Элемент · .plugin-explainer",
+    "primary": false
+  },
+  {
+    "id": "c-a78bb7",
+    "value": "#a78bb7",
+    "label": "Элемент · .plugin-explainer",
+    "primary": false
+  },
+  {
+    "id": "c-918298",
+    "value": "#918298",
+    "label": "Элемент · .plugin-explainer p",
+    "primary": false
+  },
+  {
+    "id": "c-3b2f46",
+    "value": "#3b2f46",
+    "label": "Элемент · .preset-block",
+    "primary": false
+  },
+  {
+    "id": "c-342b3d",
+    "value": "#342b3d",
+    "label": "Элемент · .compat-row",
+    "primary": false
+  },
+  {
+    "id": "c-9c8da9",
+    "value": "#9c8da9",
+    "label": "Элемент · .compat-row>span:last-child",
+    "primary": false
+  },
+  {
+    "id": "c-82758e",
+    "value": "#82758e",
+    "label": "Элемент · .compat-row.header",
+    "primary": false
+  },
+  {
+    "id": "c-574167",
+    "value": "#574167",
+    "label": "Элемент · .orbit-ring",
+    "primary": false
+  },
+  {
+    "id": "c-3e314b",
+    "value": "#3e314b",
+    "label": "Элемент · .orbit-ring.two",
+    "primary": false
+  },
+  {
+    "id": "c-4a355e",
+    "value": "#4a355e",
+    "label": "Элемент · .orbit-ring.three",
+    "primary": false
+  },
+  {
+    "id": "c-81609d",
+    "value": "#81609d",
+    "label": "Элемент · .orbit-center",
+    "primary": false
+  },
+  {
+    "id": "c-604471",
+    "value": "#604471",
+    "label": "Элемент · .orbit-center",
+    "primary": false
+  },
+  {
+    "id": "c-36233e",
+    "value": "#36233e",
+    "label": "Элемент · .orbit-center",
+    "primary": false
+  },
+  {
+    "id": "c-c5a1de",
+    "value": "#c5a1de",
+    "label": "Элемент · .orbit-center",
+    "primary": false
+  },
+  {
+    "id": "c-8657ab",
+    "value": "#8657ab",
+    "label": "Элемент · .orbit-center",
+    "primary": false
+  },
+  {
+    "id": "c-6f547b",
+    "value": "#6f547b",
+    "label": "Элемент · .orbit-player",
+    "primary": false
+  },
+  {
+    "id": "c-39253f",
+    "value": "#39253f",
+    "label": "Элемент · .orbit-player",
+    "primary": false
+  },
+  {
+    "id": "c-c3a0dc",
+    "value": "#c3a0dc",
+    "label": "Элемент · .orbit-player",
+    "primary": false
+  },
+  {
+    "id": "c-56716c",
+    "value": "#56716c",
+    "label": "Элемент · .orbit-player.p2",
+    "primary": false
+  },
+  {
+    "id": "c-273c39",
+    "value": "#273c39",
+    "label": "Элемент · .orbit-player.p2",
+    "primary": false
+  },
+  {
+    "id": "c-aad7c8",
+    "value": "#aad7c8",
+    "label": "Элемент · .orbit-player.p2",
+    "primary": false
+  },
+  {
+    "id": "c-6e6149",
+    "value": "#6e6149",
+    "label": "Элемент · .orbit-player.p3",
+    "primary": false
+  },
+  {
+    "id": "c-3b3227",
+    "value": "#3b3227",
+    "label": "Элемент · .orbit-player.p3",
+    "primary": false
+  },
+  {
+    "id": "c-dec598",
+    "value": "#dec598",
+    "label": "Элемент · .orbit-player.p3",
+    "primary": false
+  },
+  {
+    "id": "c-95839f",
+    "value": "#95839f",
+    "label": "Элемент · .multiplayer-intro>p",
+    "primary": false
+  },
+  {
+    "id": "c-b19bc1",
+    "value": "#b19bc1",
+    "label": "Элемент · .multiplayer-features",
+    "primary": false
+  },
+  {
+    "id": "c-7e6e8a",
+    "value": "#7e6e8a",
+    "label": "Комната · .room-note",
+    "primary": false
+  },
+  {
+    "id": "c-594368",
+    "value": "#594368",
+    "label": "Комната · .room-invitation",
+    "primary": false
+  },
+  {
+    "id": "c-2b2035",
+    "value": "#2b2035",
+    "label": "Комната · .room-invitation",
+    "primary": false
+  },
+  {
+    "id": "c-463050",
+    "value": "#463050",
+    "label": "Комната · .room-live-icon",
+    "primary": false
+  },
+  {
+    "id": "c-c9a5dc",
+    "value": "#c9a5dc",
+    "label": "Комната · .room-live-icon",
+    "primary": false
+  },
+  {
+    "id": "c-a58db7",
+    "value": "#a58db7",
+    "label": "Комната · .room-invitation span",
+    "primary": false
+  },
+  {
+    "id": "c-392d42",
+    "value": "#392d42",
+    "label": "Сообщения · .room-message",
+    "primary": false
+  },
+  {
+    "id": "c-231d2c",
+    "value": "#231d2c",
+    "label": "Сообщения · .room-message",
+    "primary": false
+  },
+  {
+    "id": "c-62506e",
+    "value": "#62506e",
+    "label": "Сообщения · .room-message.narrator",
+    "primary": false
+  },
+  {
+    "id": "c-3c2d46",
+    "value": "#3c2d46",
+    "label": "Ввод сообщения · .room-composer",
+    "primary": false
+  },
+  {
+    "id": "c-534060",
+    "value": "#534060",
+    "label": "Комната · .room-code",
+    "primary": false
+  },
+  {
+    "id": "c-8f77a2",
+    "value": "#8f77a2",
+    "label": "Комната · .room-code small",
+    "primary": false
+  },
+  {
+    "id": "c-caaddf",
+    "value": "#caaddf",
+    "label": "Комната · .room-code code",
+    "primary": false
+  },
+  {
+    "id": "c-080810",
+    "value": "#080810",
+    "label": "Элемент · .modal-backdrop",
+    "primary": false
+  },
+  {
+    "id": "c-5b476b",
+    "value": "#5b476b",
+    "label": "Элемент · .modal",
+    "primary": false
+  },
+  {
+    "id": "c-1d1a28",
+    "value": "#1d1a28",
+    "label": "Элемент · .modal",
+    "primary": false
+  },
+  {
+    "id": "c-b7a8c2",
+    "value": "#b7a8c2",
+    "label": "Элемент · .modal>p",
+    "primary": false
+  },
+  {
+    "id": "c-bea5d2",
+    "value": "#bea5d2",
+    "label": "Элемент · .prompt-summary",
+    "primary": false
+  },
+  {
+    "id": "c-403046",
+    "value": "#403046",
+    "label": "Элемент · .prompt-block",
+    "primary": false
+  },
+  {
+    "id": "c-221929",
+    "value": "#221929",
+    "label": "Элемент · .prompt-block",
+    "primary": false
+  },
+  {
+    "id": "c-c4a2d8",
+    "value": "#c4a2d8",
+    "label": "Элемент · .prompt-block>span",
+    "primary": false
+  },
+  {
+    "id": "c-ada1ba",
+    "value": "#ada1ba",
+    "label": "Элемент · .prompt-block pre",
+    "primary": false
+  },
+  {
+    "id": "c-12151e",
+    "value": "#12151e",
+    "label": "Чат · .chat-main",
+    "primary": false
+  },
+  {
+    "id": "c-262a38",
+    "value": "#262a38",
+    "label": "Чат · .chat-header",
+    "primary": false
+  },
+  {
+    "id": "c-151822",
+    "value": "#151822",
+    "label": "Чат · .chat-header",
+    "primary": false
+  },
+  {
+    "id": "c-636a83",
+    "value": "#636a83",
+    "label": "Элемент · .title-button svg",
+    "primary": false
+  },
+  {
+    "id": "c-777c94",
+    "value": "#777c94",
+    "label": "Чат · .chat-identity>div>span",
+    "primary": false
+  },
+  {
+    "id": "c-454c65",
+    "value": "#454c65",
+    "label": "Элемент · .separator",
+    "primary": false
+  },
+  {
+    "id": "c-3d3551",
+    "value": "#3d3551",
+    "label": "Сцена · .scene-banner",
+    "primary": false
+  },
+  {
+    "id": "c-201e30",
+    "value": "#201e30",
+    "label": "Сцена · .scene-banner",
+    "primary": false
+  },
+  {
+    "id": "c-b29acf",
+    "value": "#b29acf",
+    "label": "Сцена · .scene-kicker",
+    "primary": false
+  },
+  {
+    "id": "c-bc9ce5",
+    "value": "#bc9ce5",
+    "label": "Сцена · .scene-kicker>span",
+    "primary": false
+  },
+  {
+    "id": "c-d2c8e5",
+    "value": "#d2c8e5",
+    "label": "Сцена · .scene-banner-copy h3",
+    "primary": false
+  },
+  {
+    "id": "c-9991b0",
+    "value": "#9991b0",
+    "label": "Сцена · .scene-banner-copy p",
+    "primary": false
+  },
+  {
+    "id": "c-363349",
+    "value": "#363349",
+    "label": "Элемент · .chapter-divider>span",
+    "primary": false
+  },
+  {
+    "id": "c-646c83",
+    "value": "#646c83",
+    "label": "Элемент · .chapter-divider small",
+    "primary": false
+  },
+  {
+    "id": "c-d3c8e4",
+    "value": "#d3c8e4",
+    "label": "Сообщения · .message-byline strong",
+    "primary": false
+  },
+  {
+    "id": "c-4a3859",
+    "value": "#4a3859",
+    "label": "Сообщения · .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-a38cbd",
+    "value": "#a38cbd",
+    "label": "Сообщения · .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-332740",
+    "value": "#332740",
+    "label": "Сообщения · .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-555e77",
+    "value": "#555e77",
+    "label": "Сообщения · .message-byline time",
+    "primary": false
+  },
+  {
+    "id": "c-c8c7d9",
+    "value": "#c8c7d9",
+    "label": "Сообщения · .message-text",
+    "primary": false
+  },
+  {
+    "id": "c-8189a5",
+    "value": "#8189a5",
+    "label": "Сообщения · .message-text em",
+    "primary": false
+  },
+  {
+    "id": "c-202631",
+    "value": "#202631",
+    "label": "Сообщения · .user-message .message-text",
+    "primary": false
+  },
+  {
+    "id": "c-2d3645",
+    "value": "#2d3645",
+    "label": "Сообщения · .user-message .message-text",
+    "primary": false
+  },
+  {
+    "id": "c-bcd4d6",
+    "value": "#bcd4d6",
+    "label": "Сообщения · .user-message .message-byline strong",
+    "primary": false
+  },
+  {
+    "id": "c-37555b",
+    "value": "#37555b",
+    "label": "Сообщения · .user-message .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-809da5",
+    "value": "#809da5",
+    "label": "Сообщения · .user-message .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-24363a",
+    "value": "#24363a",
+    "label": "Сообщения · .user-message .message-byline>span",
+    "primary": false
+  },
+  {
+    "id": "c-7b839b",
+    "value": "#7b839b",
+    "label": "Сообщения · .message-actions .icon-btn",
+    "primary": false
+  },
+  {
+    "id": "c-aa9fc2",
+    "value": "#aa9fc2",
+    "label": "Элемент · .thinking",
+    "primary": false
+  },
+  {
+    "id": "c-141721",
+    "value": "#141721",
+    "label": "Ввод сообщения · .composer-zone",
+    "primary": false
+  },
+  {
+    "id": "c-8a85a2",
+    "value": "#8a85a2",
+    "label": "Ввод сообщения · .composer-tools button",
+    "primary": false
+  },
+  {
+    "id": "c-b7a0d9",
+    "value": "#b7a0d9",
+    "label": "Элемент · .tiny-orbit",
+    "primary": false
+  },
+  {
+    "id": "c-51435f",
+    "value": "#51435f",
+    "label": "Ввод сообщения · .composer",
+    "primary": false
+  },
+  {
+    "id": "c-1d1c2a",
+    "value": "#1d1c2a",
+    "label": "Ввод сообщения · .composer",
+    "primary": false
+  },
+  {
+    "id": "c-ad88e4",
+    "value": "#ad88e4",
+    "label": "Ввод сообщения · .composer",
+    "primary": false
+  },
+  {
+    "id": "c-696780",
+    "value": "#696780",
+    "label": "Ввод сообщения · .composer textarea::placeholder",
+    "primary": false
+  },
+  {
+    "id": "c-64627a",
+    "value": "#64627a",
+    "label": "Ввод сообщения · .composer-footer>span",
+    "primary": false
+  },
+  {
+    "id": "c-363147",
+    "value": "#363147",
+    "label": "Элемент · .keycap",
+    "primary": false
+  },
+  {
+    "id": "c-8d80a1",
+    "value": "#8d80a1",
+    "label": "Элемент · .keycap",
+    "primary": false
+  },
+  {
+    "id": "c-b69bdd",
+    "value": "#b69bdd",
+    "label": "Элемент · .send-button",
+    "primary": false
+  },
+  {
+    "id": "c-ac8ce0",
+    "value": "#ac8ce0",
+    "label": "Элемент · .send-button",
+    "primary": false
+  },
+  {
+    "id": "c-241730",
+    "value": "#241730",
+    "label": "Элемент · .send-button",
+    "primary": false
+  },
+  {
+    "id": "c-a08aba",
+    "value": "#a08aba",
+    "label": "Элемент · .send-button",
+    "primary": false
+  },
+  {
+    "id": "c-c2a3f2",
+    "value": "#c2a3f2",
+    "label": "Элемент · .send-button:hover:not(:disabled)",
+    "primary": false
+  },
+  {
+    "id": "c-433242",
+    "value": "#433242",
+    "label": "Элемент · .send-button.stop",
+    "primary": false
+  },
+  {
+    "id": "c-d7b7d1",
+    "value": "#d7b7d1",
+    "label": "Элемент · .send-button.stop",
+    "primary": false
+  },
+  {
+    "id": "c-715172",
+    "value": "#715172",
+    "label": "Элемент · .send-button.stop",
+    "primary": false
+  },
+  {
+    "id": "c-555f73",
+    "value": "#555f73",
+    "label": "Ввод сообщения · .composer-caption",
+    "primary": false
+  },
+  {
+    "id": "c-65778a",
+    "value": "#65778a",
+    "label": "Ввод сообщения · .composer-caption .status-dot",
+    "primary": false
+  },
+  {
+    "id": "c-2b2e3b",
+    "value": "#2b2e3b",
+    "label": "Панели · .context-panel",
+    "primary": false
+  },
+  {
+    "id": "c-9894ad",
+    "value": "#9894ad",
+    "label": "Элемент · .context-title",
+    "primary": false
+  },
+  {
+    "id": "c-2f2d3d",
+    "value": "#2f2d3d",
+    "label": "Элемент · .context-title",
+    "primary": false
+  },
+  {
+    "id": "c-2e2c3c",
+    "value": "#2e2c3c",
+    "label": "Элемент · .context-character",
+    "primary": false
+  },
+  {
+    "id": "c-e1d8ef",
+    "value": "#e1d8ef",
+    "label": "Элемент · .context-character h3",
+    "primary": false
+  },
+  {
+    "id": "c-867b99",
+    "value": "#867b99",
+    "label": "Элемент · .context-character p",
+    "primary": false
+  },
+  {
+    "id": "c-2c2c3b",
+    "value": "#2c2c3b",
+    "label": "Элемент · .context-section",
+    "primary": false
+  },
+  {
+    "id": "c-827990",
+    "value": "#827990",
+    "label": "Элемент · .context-section-title",
+    "primary": false
+  },
+  {
+    "id": "c-8d809d",
+    "value": "#8d809d",
+    "label": "Сцена · .scene-detail",
+    "primary": false
+  },
+  {
+    "id": "c-736a80",
+    "value": "#736a80",
+    "label": "Сцена · .scene-detail small",
+    "primary": false
+  },
+  {
+    "id": "c-b6a9c5",
+    "value": "#b6a9c5",
+    "label": "Сцена · .scene-detail span",
+    "primary": false
+  },
+  {
+    "id": "c-493b51",
+    "value": "#493b51",
+    "label": "Элемент · .dice-widget button",
+    "primary": false
+  },
+  {
+    "id": "c-272132",
+    "value": "#272132",
+    "label": "Элемент · .dice-widget button",
+    "primary": false
+  },
+  {
+    "id": "c-b89cce",
+    "value": "#b89cce",
+    "label": "Элемент · .dice-widget button",
+    "primary": false
+  },
+  {
+    "id": "c-c9a6e3",
+    "value": "#c9a6e3",
+    "label": "Элемент · .dice-widget strong",
+    "primary": false
+  },
+  {
+    "id": "c-35303f",
+    "value": "#35303f",
+    "label": "Элемент · .memory-note",
+    "primary": false
+  },
+  {
+    "id": "c-92839f",
+    "value": "#92839f",
+    "label": "Элемент · .memory-note",
+    "primary": false
+  },
+  {
+    "id": "c-a69bb6",
+    "value": "#a69bb6",
+    "label": "Элемент · .memory-note p",
+    "primary": false
+  },
+  {
+    "id": "c-393043",
+    "value": "#393043",
+    "label": "Элемент · .lore-mini",
+    "primary": false
+  },
+  {
+    "id": "c-221e2c",
+    "value": "#221e2c",
+    "label": "Элемент · .lore-mini",
+    "primary": false
+  },
+  {
+    "id": "c-ad95c4",
+    "value": "#ad95c4",
+    "label": "Элемент · .lore-mini",
+    "primary": false
+  },
+  {
+    "id": "c-7e728d",
+    "value": "#7e728d",
+    "label": "Элемент · .lore-mini small",
+    "primary": false
+  },
+  {
+    "id": "c-897099",
+    "value": "#897099",
+    "label": "Элемент · .lore-mini .status-dot",
+    "primary": false
+  },
+  {
+    "id": "c-382d3d",
+    "value": "#382d3d",
+    "label": "Кнопки · .context-bottom .btn",
+    "primary": false
+  },
+  {
+    "id": "c-8f6d84",
+    "value": "#8f6d84",
+    "label": "Кнопки · .context-bottom .btn",
+    "primary": false
+  },
+  {
+    "id": "c-302331",
+    "value": "#302331",
+    "label": "Кнопки · .context-bottom .btn:hover",
+    "primary": false
+  },
+  {
+    "id": "c-343040",
+    "value": "#343040",
+    "label": "Элемент · .swipe-controls",
+    "primary": false
+  },
+  {
+    "id": "c-a48cbd",
+    "value": "#a48cbd",
+    "label": "Элемент · .swipe-controls small",
+    "primary": false
+  },
+  {
+    "id": "c-282238",
+    "value": "#282238",
+    "label": "Элемент · .generation-bar",
+    "primary": false
+  },
+  {
+    "id": "c-504262",
+    "value": "#504262",
+    "label": "Элемент · .generation-bar",
+    "primary": false
+  },
+  {
+    "id": "c-d8c7fc",
+    "value": "#d8c7fc",
+    "label": "Кнопки · .generation-bar>button:not(.btn)",
+    "primary": false
+  },
+  {
+    "id": "c-b5aac8",
+    "value": "#b5aac8",
+    "label": "Элемент · .generation-bar>span",
+    "primary": false
+  },
+  {
+    "id": "c-55434f",
+    "value": "#55434f",
+    "label": "Исправления · .grammar-feedback",
+    "primary": false
+  },
+  {
+    "id": "c-221e2a",
+    "value": "#221e2a",
+    "label": "Исправления · .grammar-feedback",
+    "primary": false
+  },
+  {
+    "id": "c-733744",
+    "value": "#733744",
+    "label": "Исправления · .grammar-feedback mark",
+    "primary": false
+  },
+  {
+    "id": "c-f39aab",
+    "value": "#f39aab",
+    "label": "Исправления · .grammar-feedback mark",
+    "primary": false
+  },
+  {
+    "id": "c-383042",
+    "value": "#383042",
+    "label": "Исправления · .grammar-suggestion button",
+    "primary": false
+  },
+  {
+    "id": "c-ded3ed",
+    "value": "#ded3ed",
+    "label": "Исправления · .grammar-suggestion button",
+    "primary": false
+  },
+  {
+    "id": "c-66516f",
+    "value": "#66516f",
+    "label": "Исправления · .grammar-suggestion button",
+    "primary": false
+  },
+  {
+    "id": "c-483e6f",
+    "value": "#483e6f",
+    "label": "Иллюстрация сцены · 483e6f",
+    "primary": false
+  },
+  {
+    "id": "c-b6a0ea",
+    "value": "#b6a0ea",
+    "label": "Иллюстрация сцены · b6a0ea",
+    "primary": false
+  },
+  {
+    "id": "c-d1bcff",
+    "value": "#d1bcff",
+    "label": "Иллюстрация сцены · d1bcff",
+    "primary": false
+  },
+  {
+    "id": "c-c8b7ee",
+    "value": "#c8b7ee",
+    "label": "Иллюстрация сцены · c8b7ee",
+    "primary": false
+  }
+]

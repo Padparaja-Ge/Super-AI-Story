@@ -1,0 +1,9 @@
+export const damageTypes:string[];
+export const damageNames:Record<string,string>;
+export const inventoryDefaults:Record<string,number>;
+export function levelBudget(level?:number):number;
+export function skillBudget(level?:number):number;
+export function normalizeSkill(raw:any):any;
+export function normalizeSkills(value:any,level?:number):any[];
+export function starterSkills():any[];
+export function npcSkills(archetype?:string):any[];

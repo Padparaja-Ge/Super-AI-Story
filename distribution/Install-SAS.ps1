@@ -87,7 +87,7 @@ function Install-SasRuntime([string]$Directory,$Manifest) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip=[IO.Compression.ZipFile]::OpenRead($archive)
         $expected=@{};foreach($f in $Manifest.files){$expected[$f.path]=$f}
-        $helpers=@('README.md','COPYRIGHT.md','THIRD-PARTY.md','Install-SAS.ps1','web-server.json','Start-SAS.cmd','Start-SAS-Web.cmd','Start-SAS-Web-Shell.cmd','Stop-SAS-Web.cmd','Repair-SAS.cmd','.sas-payload.json')
+        $helpers=@('LICENSE','NOTICE','README.md','COPYRIGHT.md','THIRD-PARTY.md','Install-SAS.ps1','web-server.json','Start-SAS.cmd','Start-SAS-Web.cmd','Start-SAS-Web-Shell.cmd','Stop-SAS-Web.cmd','Repair-SAS.cmd','.sas-payload.json')
         $seen=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         try {
             $index=0

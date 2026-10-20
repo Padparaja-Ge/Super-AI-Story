@@ -1,0 +1,9 @@
+{
+  "scriptName": "Троеточие",
+  "findRegex": "/\\.\\.\\./g",
+  "replaceString": "…",
+  "placement": [2],
+  "disabled": false,
+  "markdownOnly": true,
+  "promptOnly": false
+}
