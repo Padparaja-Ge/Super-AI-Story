@@ -23,19 +23,20 @@ export async function rewriteDraft(state, chat, text, getSecret, signal) {
   const character = state.characters.find(c => c.id === chat.characterId);
   const persona = state.personas.find(p => p.id === (chat.personaId || character?.personaId));
   const brief = item => item && Object.fromEntries(['name', 'description', 'appearance', 'personality'].map(key => [key, String(item[key] || '').slice(0, 1000)]));
-  const context = { persona: brief(persona), character: brief(character), scene: chat.scene, messages: chat.messages.slice(-4).map(m => ({ role: m.role, content: (m.originalContent || m.translatedContent || m.content).slice(-2000) })), draft: text };
+  const context = { persona: brief(persona), character: brief(character), scene: chat.scene, messages: chat.messages.slice(-4).map(m => ({ role: m.role, content: String(m.originalContent || m.translatedContent || m.content||'').slice(-2000) })) };
   const windowSize = Number(connection.contextWindow) || 8192;
   const maxTokens = Math.min(2400, Math.max(600, Math.ceil(text.length / 2) + 300), Math.floor(windowSize / 2));
-  const messages = [{ role: 'system', content: instructions }, { role: 'user', content: '' }];
-  messages[1].content = JSON.stringify(context);
+  const contextInstruction='\nСПРАВОЧНЫЙ КОНТЕКСТ JSON (прошлые сообщения уже отправлены; их НЕ редактировать):\n';
+  const messages = [{ role: 'system', content: instructions+contextInstruction+JSON.stringify(context) }, { role: 'user', content: text }];
   while (context.messages.length && messageTokens(messages) + maxTokens + 100 > windowSize) {
-    context.messages.shift(); messages[1].content = JSON.stringify(context);
+    context.messages.shift(); messages[0].content = instructions+contextInstruction+JSON.stringify(context);
   }
   if (messageTokens(messages) + maxTokens + 100 > windowSize) throw new Error('Черновик и описание персонажа не помещаются в контекст модели. Сократите текст или увеличьте окно модели.');
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = cleanRewrite(await complete({ ...connection, maxTokens, temperature: 0.75 }, getSecret(connection.id), messages, { signal }));
-    if (comparable(result) !== comparable(text)) return result;
-    messages[0].content = instructions + '\nПредыдущая попытка повторила исходник. Обязательно разверни намеченное действие в полноценный абзац; одной коррекции регистра и знаков препинания недостаточно.';
+    const copiedHistory=context.messages.some(message=>[message.content,message.content.replace(/^[^\n:]{1,80}:\s*/,'')].some(previous=>comparable(previous)===comparable(result)));
+    if (comparable(result) !== comparable(text)&&!copiedHistory) return result;
+    messages[0].content = instructions + '\nПредыдущая попытка повторила исходник или прошлый пост. Редактируй ТОЛЬКО последнее сообщение пользователя: это новый неотправленный черновик. Обязательно разверни намеченное в НЁМ действие; не переписывай историю.'+contextInstruction+JSON.stringify(context);
   }
   throw new Error('Модель дважды повторила исходный текст. Попробуйте другую instruct-модель или более конкретный черновик. Исходник сохранён.');
 }

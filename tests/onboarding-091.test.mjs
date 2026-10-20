@@ -29,6 +29,12 @@ test('Guide distinguishes roleplay, fanfic and multiplayer memory, rules and lor
   assert.equal(new Set(GUIDE_STEPS.map(step=>step.id)).size,GUIDE_STEPS.length);
 });
 
+test('Guide opt-out survives a new server/origin, independently from story autosave and browser localStorage',async t=>{
+ const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path'),{createGuidePreferences}=await import('../server/onboarding.mjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-guide-'));t.after(()=>fs.rm(dir,{recursive:true,force:true,maxRetries:5}));const first=createGuidePreferences(dir);assert.equal(await first.read(),null);
+ await first.write({enabled:false,welcomed:true,step:2});const restarted=createGuidePreferences(dir);assert.equal((await restarted.read()).enabled,false);assert.equal((await restarted.read()).step,2);assert.throws(()=>restarted.write({enabled:'false'}),/Неверная/);
+});
+
 test('Desktop Windows resource version is explicit and rejects unsupported input',()=>{
   assert.equal(windowsVersion('0.9.1'),'0.9.1.0');
   assert.equal(windowsVersion('1.2.3-beta.4'),'1.2.3.0');

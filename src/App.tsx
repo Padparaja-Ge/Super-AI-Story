@@ -18,7 +18,7 @@ import { MultiplayerView } from './Multiplayer';
 
 import {ExtensionPage,ExtensionSlot,extensionRuntime,useExtensions} from './extensionRuntime';
 import './extensions.css';
-import {BeginnerGuide,openBeginnerGuide} from './BeginnerGuide';
+import {BeginnerGuide,openBeginnerGuide,flushGuidePreferences} from './BeginnerGuide';
 import {CircleHelp} from 'lucide-react';
 import {useFrontendDiagnostics} from './Diagnostics';
 import {AutosaveIndicator} from './AutosaveSettings';
@@ -73,7 +73,7 @@ export default function App() {
     await queue.current;
   };
   useEffect(()=>{
-    const prepare=(event:Event)=>{const callbacks=(event as CustomEvent<{resolve:()=>void;reject:(reason:Error)=>void}>).detail;if(callbacks&&typeof callbacks.resolve==='function'&&typeof callbacks.reject==='function')void flush().then(callbacks.resolve,callbacks.reject);};
+    const prepare=(event:Event)=>{const callbacks=(event as CustomEvent<{resolve:()=>void;reject:(reason:Error)=>void}>).detail;if(callbacks&&typeof callbacks.resolve==='function'&&typeof callbacks.reject==='function')void flush().then(()=>flushGuidePreferences()).then(callbacks.resolve,callbacks.reject);};
     window.addEventListener('sas:prepare-close',prepare);
     return()=>window.removeEventListener('sas:prepare-close',prepare);
   },[]);

@@ -18,7 +18,8 @@ test('Rewrite uses selected story model, persona, appearance and scene, leaving 
   assert.equal(await rewriteDraft(state, chat, 'я захожу в дом', () => 'session-key'), expanded);
   assert.equal(calls[0].model, 'instruct'); assert.equal(calls[0].temperature, 0.75);
   assert.match(calls[0].messages[0].content, /РАЗВЕРНУТЬ/);
-  const input = JSON.parse(calls[0].messages[1].content);
+  assert.equal(calls[0].messages.at(-1).content,'я захожу в дом');
+  const input = JSON.parse(calls[0].messages[0].content.split('СПРАВОЧНЫЙ КОНТЕКСТ JSON (прошлые сообщения уже отправлены; их НЕ редактировать):\n')[1]);
   assert.equal(input.persona.description, 'Путешественник'); assert.equal(input.character.appearance, 'Серебряные волосы');
   assert.equal(input.scene.location, 'Дом Тонерико'); assert.equal(input.messages[0].content, 'Дверь открыта.');
   assert.deepEqual(chat, before);
@@ -33,6 +34,12 @@ test('Repeated echo reports a useful error after exactly two attempts', async t 
   const { state, chat, calls } = fixture(t, ['Я захожу в дом.']);
   await assert.rejects(rewriteDraft(state, chat, 'я захожу в дом', () => ''), /дважды повторила/);
   assert.equal(calls.length, 2);
+});
+
+test('Room editor selects the new draft even after unrelated lobby posts and retries a copied old post',async t=>{
+ const {rewriteRoomDraft}=await import('../server/room-rewrite.mjs');const {state,calls}=fixture(t,['Я жду у двери.','Я осторожно раскрываю книгу, придерживая потрёпанные страницы.']);
+ const original=structuredClone(state),result=await rewriteRoomDraft(state,{text:'Открываю книгу.',connectionId:'story-model',persona:state.personas[0],room:{messages:[{role:'user',name:'Сосед',content:'Я жду у двери.'}]}},()=>'',new AbortController().signal);
+ assert.match(result,/книгу/);assert.equal(calls.length,2);assert.ok(calls.every(call=>call.messages.at(-1).content==='Открываю книгу.'));assert.deepEqual(state,original);
 });
 test('Reasoning/fences are removed; incomplete reasoning is not offered as an edit', () => {
   assert.equal(cleanRewrite('<think>Some reasoning</think>\n```text\nИгровой пост.\n```'), 'Игровой пост.');

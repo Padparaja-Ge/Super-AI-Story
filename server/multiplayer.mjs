@@ -29,6 +29,7 @@ import {historySummaries,selectRoomHistory,deleteRoomHistory} from './room-histo
 import { publicPersona } from './room-rewrite.mjs';
 import {createRoomMemory,roomChat,roomMemoryDefaults,roundMessages,extractiveProtocol} from './room-memory.mjs';
 import {fitNarrationPrompt,narrationContextHash,narrationReferencesHash,publicNarration,createNarrationContinuationJoiner} from './room-narration.mjs';
+import {publicRegeneration,cleanNarration,narrationFormatInstruction} from './room-narration.mjs';
 
 export function invitationUrls(port,code,interfaces=os.networkInterfaces()) {
   return Object.entries(interfaces).flatMap(([name,items])=>(items||[]).filter(i=>i.family==='IPv4').map(i=>({name,address:i.address,url:`http://${i.address}:${port}/play?code=${encodeURIComponent(code)}`})));
@@ -56,7 +57,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
   const requireRoom=()=>{if(!server?.listening)throw new Error('Сначала откройте комнату.');};
   const metadata=()=>{
     const state=getState(),room=state.multiplayer||{},chat=state.chats.find(c=>c.id===room.chatId),character=state.characters.find(c=>c.id===chat?.characterId);
-    return {room:{lobby:lobbyState(),media:media.publicState(),backupError:backups.error(),autosaveEnabled:canAutoSave()&&roomAutosaveSettings(room.autosaveSettings).enabled,autosaveSettings:roomAutosaveSettings(room.autosaveSettings),corrections:(room.corrections||[]).slice(-50),avatars:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,p.avatar||'✧'])),id:room.id,name:name||room.name,connectionId:room.connectionId,aiSettings:room.aiSettings||{},mode:room.mode||'roleplay',tactical:room.tactical?{...room.tactical,eventArchive:undefined,eventCount:(room.tactical.eventArchive||room.tactical.log||[]).length}:undefined,storybook:room.storybook,gmError:room.gmError,narration:publicNarration(room,getState()),memorySettings:{...roomMemoryDefaults,...room.memorySettings},memoryBlocks:roomMemory.validMemory(roomChat(room)).length,memoryProgress:room.memoryProgress,memoryWarning:room.memoryWarning,contextReport:room.contextReport,rulebooks:state.lorebooks.filter(b=>(room.rulebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name})),character:{id:isGame(room)?'':character?.id,name:isGame(room)?'AI Game Master':character?.name||'Ведущий'},scene:room.scene,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name}))},participants:participants(),turn:turns.status(actorIds()),generating:!!generation};
+    return {room:{lobby:lobbyState(),media:media.publicState(),backupError:backups.error(),autosaveEnabled:canAutoSave()&&roomAutosaveSettings(room.autosaveSettings).enabled,autosaveSettings:roomAutosaveSettings(room.autosaveSettings),corrections:(room.corrections||[]).slice(-50),avatars:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,p.avatar||'✧'])),id:room.id,name:name||room.name,connectionId:room.connectionId,aiSettings:room.aiSettings||{},mode:room.mode||'roleplay',tactical:room.tactical?{...room.tactical,eventArchive:undefined,eventCount:(room.tactical.eventArchive||room.tactical.log||[]).length}:undefined,storybook:room.storybook,gmError:room.gmError,narration:publicNarration(room,getState()),regeneration:publicRegeneration(room,state),memorySettings:{...roomMemoryDefaults,...room.memorySettings},memoryBlocks:roomMemory.validMemory(roomChat(room)).length,memoryProgress:room.memoryProgress,memoryWarning:room.memoryWarning,contextReport:room.contextReport,rulebooks:state.lorebooks.filter(b=>(room.rulebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name})),character:{id:isGame(room)?'':character?.id,name:isGame(room)?'AI Game Master':character?.name||'Ведущий'},scene:room.scene,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name}))},participants:participants(),turn:turns.status(actorIds()),generating:!!generation};
   };
   let lastMetadata='';
   const notify=()=>{if(!server?.listening)return;const data=metadata(),serialized=JSON.stringify(data);if(serialized!==lastMetadata){lastMetadata=serialized;broadcast({type:'participants',...data});for(const [socket,peer]of peers)if(peer.authenticated&&peer.admitted===false)send(socket,{type:'lobby-state',selfId:peer.id,admission:'pending',room:{id:roomData().id,name,mode:roomData().mode,lobby:lobbyState()}});}};
@@ -335,9 +336,31 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     const ownership='[SAS_ROLE_OWNERSHIP] Игровые герои: '+players.join(', ')+'. Их новые действия и прямые реплики пишет только соответствующий игрок; ты не можешь дописать их ход. Живые NPC, которыми ты управляешь: '+(npcs.join(', ')||'на столе нет; можно описывать окружение и появление новых NPC')+'. Если герой ждёт, описывай то, что доступно ему без движения и без новой реплики от его имени.';
     return [{role:'system',content:instructions+'\n'+ownership},{role:'user',content:'[SAS_CURRENT_PLAYER_REQUESTS] Текущие действия и вопросы КАЖДОГО игрока (это запросы, не уже выполненные NPC события):\n'+posts.map(m=>`${m.name||m.personaName||'Игрок'}: ${extractiveProtocol(m.content,perPost)}`).join('\n\n')+'\nЗакончи повествование только этого раунда на русском, Развей ситуацию конкретным ВНЕШНИМ событием или доступной зацепкой к цели Story book с учётом выбранного игроками пути. Новые действия, перемещения и реплики могут принадлежать только NPC, а не игрокам. Не заставляй игроков брать предметы или отвечать. Затем оставь следующие решения игрокам.\n'+ownership}];
   }
-  async function generate({chatId,content,continueMessageId,acceptMessageId,signal}={}) {
+  async function regenerateNarration(messageId,signal){
+    const initial=getState(),room=initial.multiplayer,allowed=publicRegeneration(room,initial),record=room.lastNarration;
+    if(allowed?.messageId!==messageId||!allowed.canRegenerate||!record?.promptMessages?.length)throw Object.assign(new Error('Перегенерация доступна до новых сообщений и действий игроков. Уже выполненные ходы не переигрываются.'),{status:409});
+    const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();generation=controller;notify();
+    try{
+      const {state,chat}=context(),connection=getConnection(state,chat);let text='',reason='';
+      for(let attempt=0;attempt<3;attempt++){
+        const fitted=await fitNarrationPrompt(connection,getSecret(connection.id),record.promptMessages,{text,maxTokens:connection.maxTokens||record.maxTokens,priorityMessages:record.priorityMessages||[],signal:controller.signal,adaptInstruction:isGame(),instruction:undefined});
+        const joiner=text?createNarrationContinuationJoiner(text):undefined;reason='';const before=text.length;
+        try{for await(const chunk of streamCompletion(connection,getSecret(connection.id),fitted.messages,{signal:controller.signal,adaptInstruction:isGame(),onFinish:finish=>{reason=finish;},preset:{...state.presets?.find(p=>p.id===(chat.presetId||state.activePresetId)),maxTokens:fitted.maxTokens}})){text+=joiner?joiner.push(chunk):chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');}}
+        finally{if(joiner)text+=joiner.flush();}
+        if(text.length===before)throw new Error('Модель не вернула новый вариант. Предыдущий ответ сохранён.');
+        if(reason!=='length')break;
+      }
+      text=cleanNarration(text);if(!text||reason==='length')throw new Error('Новый вариант не завершён. Предыдущий ответ сохранён; увеличьте лимит ответа и повторите.');
+      controller.signal.throwIfAborted();const fresh=getState();if(fresh.multiplayer?.id!==room.id||!publicRegeneration(fresh.multiplayer,fresh)?.canRegenerate)throw new Error('Контекст изменился. Предыдущий ответ сохранён.');
+      const message=fresh.multiplayer.messages.find(m=>m.id===messageId);message.content=text;message.regeneratedAt=new Date().toISOString();delete message.translatedContent;delete message.originalContent;
+      fresh.multiplayer.lastNarration.contextHash=narrationContextHash(fresh.multiplayer,messageId);persist(fresh);broadcast({type:'edit',message});
+      try{const refreshed=context(),scene=await inferScene(refreshed.state,{...refreshed.chat,scene:record.sceneBefore||refreshed.chat.scene},getSecret,controller.signal);if(scene){const latest=getState();if(latest.multiplayer?.id===room.id){latest.multiplayer.scene={...latest.multiplayer.scene,...scene};latest.multiplayer.lastNarration.contextHash=narrationContextHash(latest.multiplayer,messageId);persist(latest);}}}catch{}return {message,regenerated:true,incomplete:false};
+    }finally{signal?.removeEventListener('abort',abort);if(generation===controller)generation=undefined;notify();}
+  }
+  async function generate({chatId,content,continueMessageId,acceptMessageId,regenerateMessageId,signal}={}) {
     assertStarted();
     requireRoom();if(generation)throw Object.assign(new Error('Ведущий уже пишет ответ.'),{status:409});
+    if(regenerateMessageId){if(continueMessageId||acceptMessageId||content?.trim()||chatId)throw Object.assign(new Error('Выберите только перегенерацию ответа.'),{status:400});return regenerateNarration(regenerateMessageId,signal);}
     if(continueMessageId&&acceptMessageId)throw Object.assign(new Error('Выберите дописывание или завершение ответа.'),{status:400});
     const room=roomData(),pending=publicNarration(room,getState()),resumeId=continueMessageId||acceptMessageId,resume=!!resumeId;
     if(resume){
@@ -362,6 +385,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       persist(fresh);broadcast({type:target?'edit':'message',message});lastSave=Date.now();return message;
     };
     const finalize=()=>{
+      const clean=cleanNarration(text);if(!clean)throw new Error('Модель вернула только служебный заголовок. Допишите ответ или повторите генерацию.');text=clean;
       const message=updateMessage(false),fresh=getState();
       if(gameMode&&fresh.multiplayer.tactical.version===2){
         // Keep offline sheets for secure resume; the initiative/pathfinding
@@ -371,7 +395,8 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         if(game.initiativeVersion&&game.gmPendingNext&&game.turn<game.order.length){game.gmPendingNext=false;activateInitiative(game);}else resetRound(game);game.gmProcessed=[];fresh.multiplayer.gmError='';
       }
       else turns.complete('narrator',actorIds());
-      // The prompt snapshot is only needed while a reply remains unfinished.
+      if(fresh.multiplayer.narration?.promptMessages?.length)fresh.multiplayer.lastNarration={messageId:id,promptMessages:fresh.multiplayer.narration.promptMessages,priorityMessages:fresh.multiplayer.narration.priorityMessages||[],maxTokens:fresh.multiplayer.narration.maxTokens,sceneBefore:fresh.multiplayer.narration.sceneBefore,contextHash:narrationContextHash(fresh.multiplayer,id),referencesHash:narrationReferencesHash(fresh,fresh.multiplayer)};
+      // Retain only the most recent snapshot, privately, for text-only retries.
       delete fresh.multiplayer.narration;persist(fresh);return message;
     };
     try {
@@ -392,9 +417,9 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         const historyMessages=round.messages.length?[...round.messages,{role:'user',content:[recalled.text,'Заверши этот раунд как ведущий на русском. Кратко отыграй последствия действий КАЖДОГО участника выше. Ответь только на ТЕКУЩИЕ вопросы игроков прямыми репликами NPC: произнеси запрошенные имена, числа, пароли и условия из подтверждённых источников точно. Не заменяй ответ фразой «NPC вспомнил». Если источники не дают ответа — NPC не знает. Цель приключения — план, а не уже выполненное событие. Вопрос об обязательстве не означает его исполнение. Текущие расчёты движка уже выполнены: не бросай кубики и не перечисляй численные HP, урон, ячейки; опиши видимый эффект, учитывая текущую таблицу ресурсов. Не пропускай участников. Не повторяй инструкции; дай только повествование и реплики NPC. Не меняй время и локацию без действий игроков; следующие решения оставь игрокам. Закончи все предложения.'].filter(Boolean).join('\n\n')}]:undefined;
         const options={extensionMode:state.multiplayer?.mode==='roleplay'?'multiplayer-roleplay':state.multiplayer?.mode,extraInstructions:gameMode?current.extraInstructions:[recalled.text,current.extraInstructions].filter(Boolean).join('\n\n'),compact:true,extraFirst:true,preserveHistory:gameMode,signal:controller.signal,retrieval:recalled.retrieval,...(historyMessages?{historyMessages}:{})};
         const prompt=preparePrompt?await preparePrompt(state,chat.id,'',options):buildPrompt(state,chat.id,'',options);
-        sourcePrompt=prompt.messages;promptMaxTokens=prompt.budget.maxTokens;priorityMessages=gameMode?requiredNarrationMessages(current.priorityInstructions,round.messages,connection):[];
+        sourcePrompt=prompt.messages;sourcePrompt[0]={...sourcePrompt[0],content:sourcePrompt[0].content+'\n'+narrationFormatInstruction};promptMaxTokens=prompt.budget.maxTokens;priorityMessages=gameMode?requiredNarrationMessages(current.priorityInstructions+'\n'+narrationFormatInstruction,round.messages,connection):[];
         const report={...recalled.report,compressedPosts:round.compressed,playerPosts:(gameMode?round.messages:roundMessages(chat)).map(m=>({id:m.id,name:m.name||m.personaName})),warnings:[...recalled.warnings,...(prompt.warnings||[])],estimatedTokens:prompt.estimatedTokens,budget:prompt.budget,createdAt:new Date().toISOString()};
-        const prepared=getState();prepared.multiplayer.contextReport=report;prepared.multiplayer.memoryProgress='Ведущий описывает последствия ходов';prepared.multiplayer.narration={messageId:id,status:'writing',promptMessages:sourcePrompt,priorityMessages,maxTokens:promptMaxTokens,contextHash:narrationContextHash(prepared.multiplayer,id),referencesHash:narrationReferencesHash(prepared,prepared.multiplayer),createdAt:new Date().toISOString()};persist(prepared);notify();
+        const prepared=getState();prepared.multiplayer.contextReport=report;prepared.multiplayer.memoryProgress='Ведущий описывает последствия ходов';prepared.multiplayer.narration={messageId:id,status:'writing',promptMessages:sourcePrompt,priorityMessages,maxTokens:promptMaxTokens,sceneBefore:structuredClone(prepared.multiplayer.scene),contextHash:narrationContextHash(prepared.multiplayer,id),referencesHash:narrationReferencesHash(prepared,prepared.multiplayer),createdAt:new Date().toISOString()};persist(prepared);notify();
       }
       for(let attempt=0;attempt<3;attempt++){
         controller.signal.throwIfAborted();const continuing=resume||attempt>0;
@@ -416,7 +441,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         const message=updateMessage(true,warning),fresh=getState();fresh.multiplayer.gmError=warning;persist(fresh);return {message,incomplete:true,reason:'length'};
       }
       const message=finalize();
-      try {chat.messages=chat.messages.filter(m=>m.id!==id);chat.messages.push(message);const scene=await inferScene(state,chat,getSecret,controller.signal);if(scene){const fresh=getState();if(fresh.multiplayer?.id===roomId){fresh.multiplayer.scene={...fresh.multiplayer.scene,...scene};persist(fresh);}}}catch{}
+      try {chat.messages=chat.messages.filter(m=>m.id!==id);chat.messages.push(message);const scene=await inferScene(state,chat,getSecret,controller.signal);if(scene){const fresh=getState();if(fresh.multiplayer?.id===roomId){fresh.multiplayer.scene={...fresh.multiplayer.scene,...scene};if(fresh.multiplayer.lastNarration?.messageId===id)fresh.multiplayer.lastNarration.contextHash=narrationContextHash(fresh.multiplayer,id);persist(fresh);}}}catch{}
       return {message,incomplete:false};
     }catch(error){
       if(text){updateMessage(true,error.message);const fresh=getState();if(fresh.multiplayer?.id===roomId){fresh.multiplayer.gmError=error.message;persist(fresh);}}

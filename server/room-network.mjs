@@ -3,6 +3,7 @@ import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {downloadRoomBinary} from './room-network-download.mjs';
 
 const RELEASE_API='https://api.github.com/repos/cloudflare/cloudflared/releases/latest';
 const MAX_BINARY=100*1024*1024;
@@ -12,35 +13,35 @@ async function rename(from,to){for(let attempt=0;;attempt++)try{await fs.rename(
 function officialURL(value){let url;try{url=new URL(value);}catch{throw fail('Некорректный адрес загрузки cloudflared.');}if(url.protocol!=='https:'||url.username||url.password||!['api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'].includes(url.hostname))throw fail('Загрузка разрешена только из официального релиза Cloudflare на GitHub.');return url;}
 async function limitedBody(response,limit){const chunks=[];let bytes=0;for await(const chunk of response.body||[]){bytes+=chunk.byteLength;if(bytes>limit){await response.body?.cancel().catch(()=>{});throw fail('Ответ сервера превышает допустимый размер.',502);}chunks.push(Buffer.from(chunk));}return Buffer.concat(chunks);}
 
-export function createRoomNetwork({dataDir,getRoom,diagnostics=()=>{},fetchImpl=globalThis.fetch,spawnImpl=spawn,platform=process.platform,arch=process.arch,startTimeoutMs=45000,roomCheckMs=1000}={}){
+export function createRoomNetwork({dataDir,getRoom,diagnostics=()=>{},fetchImpl=globalThis.fetch,spawnImpl=spawn,platform=process.platform,arch=process.arch,startTimeoutMs=45000,roomCheckMs=1000,downloadIdleMs=90000}={}){
   if(!dataDir||typeof getRoom!=='function')throw new Error('Неверные настройки сети комнаты.');
   const directory=path.join(dataDir,'network'),manifestFile=path.join(directory,'cloudflared.json');
   let installation=null,installing=false,downloadBytes=0,downloadTotal=0,installAbort,installPromise,child=null,roomWatch,childExit,startingPromise,stoppingPromise,startCancel,startEpoch=0,closed=false;
-  let tunnel={state:'stopped',url:'',roomId:'',error:''};
+  let tunnel={state:'stopped',url:'',roomId:'',error:''},installError='',downloadStage='';
   const log=(event,details={})=>{try{diagnostics({scope:'room-network',event,...details});}catch{}};
   const ready=fs.readFile(manifestFile,'utf8').then(raw=>{if(raw.length>8192)return;const parsed=JSON.parse(raw);if(parsed.platform===platform&&parsed.arch===arch&&/^cloudflared-[A-Za-z0-9_.-]+(?:\.exe)?$/.test(parsed.file||'')&&/^[a-f0-9]{64}$/.test(parsed.sha256||'')&&Number.isSafeInteger(parsed.bytes)&&parsed.bytes>0&&parsed.bytes<=MAX_BINARY)installation=parsed;}).catch(()=>{});
-  const status=()=>({installed:!!installation,version:installation?.version||'',supported:platform==='win32'&&['x64','arm64'].includes(arch),installing,downloadBytes,downloadTotal,tunnel:{...tunnel},fallback});
-  async function officialFetch(value,signal){let url=officialURL(value);for(let count=0;count<6;count++){
-    const response=await fetchImpl(url.href,{redirect:'manual',signal,headers:{'User-Agent':'SAS-Room-Network','Accept':url.hostname==='api.github.com'?'application/vnd.github+json':'application/octet-stream'}});
+  const status=()=>({installed:!!installation,version:installation?.version||'',supported:platform==='win32'&&['x64','arm64'].includes(arch),installing,installError,downloadStage,downloadBytes,downloadTotal,tunnel:{...tunnel},fallback});
+  async function officialFetch(value,signal,headers={}){let url=officialURL(value);for(let count=0;count<6;count++){
+    const response=await fetchImpl(url.href,{redirect:'manual',signal,headers:{'User-Agent':'SAS-Room-Network','Accept':url.hostname==='api.github.com'?'application/vnd.github+json':'application/octet-stream',...headers}});
     if([301,302,303,307,308].includes(response.status)){const target=response.headers.get('location');await response.body?.cancel().catch(()=>{});if(!target)throw fail('Некорректное перенаправление загрузки.',502);url=officialURL(new URL(target,url).href);continue;}
     if(!response.ok){await response.body?.cancel().catch(()=>{});throw fail('Не удалось загрузить cloudflared: HTTP '+response.status,502);}return response;
   }throw fail('Слишком много перенаправлений загрузки.',502);}
   function install(){if(installPromise)return installPromise;installPromise=(async()=>{
     await ready;if(closed)throw fail('Сетевой менеджер закрыт.');if(child||startingPromise)throw fail('Сначала остановите интернет-ссылку.',409);if(platform!=='win32'||!['x64','arm64'].includes(arch))throw fail('Установка из SAS доступна для Windows x64/ARM64. В других системах используйте локальную сеть или внешнюю настройку туннеля.');
-    installing=true;downloadBytes=0;downloadTotal=0;installAbort=new AbortController();const signal=AbortSignal.any([installAbort.signal,AbortSignal.timeout(120000)]);let temporary;
+    installing=true;installError='';downloadStage='Проверка официального релиза';downloadBytes=0;downloadTotal=0;installAbort=new AbortController();const signal=installAbort.signal;let temporary;
     try{
-      const response=await officialFetch(RELEASE_API,signal),release=JSON.parse((await limitedBody(response,2*1024*1024)).toString('utf8')),assetName='cloudflared-windows-'+(arch==='x64'?'amd64':'arm64')+'.exe';
+      const response=await officialFetch(RELEASE_API,AbortSignal.any([signal,AbortSignal.timeout(45000)])),release=JSON.parse((await limitedBody(response,2*1024*1024)).toString('utf8')),assetName='cloudflared-windows-'+(arch==='x64'?'amd64':'arm64')+'.exe';
       const asset=release.assets?.find(asset=>asset.name===assetName&&!asset.state?.includes('open'));
       if(!asset||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>MAX_BINARY||!/^sha256:[a-f0-9]{64}$/.test(asset.digest||''))throw fail('В официальном релизе нет подходящего файла с проверяемой SHA256. Автоматическая установка отменена.',502);
       if(typeof release.tag_name!=='string'||!/^[-A-Za-z0-9_.]{1,40}$/.test(release.tag_name))throw fail('Некорректная версия cloudflared.',502);
       const download=officialURL(asset.browser_download_url);if(download.hostname!=='github.com'||!download.pathname.startsWith('/cloudflare/cloudflared/releases/download/'))throw fail('Файл не относится к официальному релизу Cloudflare.',502);
-      await fs.mkdir(directory,{recursive:true});temporary=path.join(directory,'download-'+crypto.randomUUID()+'.tmp');const file=await fs.open(temporary,'wx');downloadTotal=asset.size;const hash=crypto.createHash('sha256');
-      try{const binary=await officialFetch(download.href,signal);if(Number(binary.headers.get('content-length'))>MAX_BINARY){await binary.body?.cancel().catch(()=>{});throw fail('Файл cloudflared превышает 100 МБ.',502);}for await(const chunk of binary.body||[]){signal.throwIfAborted();downloadBytes+=chunk.byteLength;if(downloadBytes>MAX_BINARY||downloadBytes>asset.size)throw fail('Размер cloudflared не совпадает с релизом.',502);hash.update(chunk);await file.writeFile(chunk);}await file.sync();}finally{await file.close();}
-      if(downloadBytes!==asset.size||hash.digest('hex')!==asset.digest.slice(7))throw fail('SHA256 cloudflared не совпала с официальным релизом. Файл не установлен.',502);
+      await fs.mkdir(directory,{recursive:true});temporary=path.join(directory,`download-${asset.digest.slice(7)}.part`);downloadTotal=asset.size;downloadStage='Загрузка сетевого компонента';
+      await downloadRoomBinary({file:temporary,size:asset.size,sha256:asset.digest.slice(7),signal,idleMs:downloadIdleMs,fetchResponse:(offset,downloadSignal)=>officialFetch(download.href,downloadSignal,{'Accept-Encoding':'identity',...(offset?{Range:`bytes=${offset}-`}:{})}),onProgress:bytes=>{downloadBytes=bytes;},onRetry:attempt=>{downloadStage=`Восстановление соединения · попытка ${attempt+1}`;}});
+      downloadStage='Проверка и установка';
       const filename=`cloudflared-${platform}-${arch}-${release.tag_name}.exe`,destination=path.join(directory,filename);await rename(temporary,destination);temporary=null;
       const record={file:filename,version:release.tag_name,sha256:asset.digest.slice(7),bytes:asset.size,platform,arch,installedAt:new Date().toISOString()},manifestTemporary=manifestFile+'.'+crypto.randomUUID()+'.tmp';
       try{await fs.writeFile(manifestTemporary,JSON.stringify(record,null,2),{flag:'wx'});await rename(manifestTemporary,manifestFile);}finally{await fs.unlink(manifestTemporary).catch(()=>{});}installation=record;log('installed',{version:record.version,bytes:record.bytes});return status();
-    }catch(error){log('installation-failed',{code:error.code||error.name});throw error;}finally{installing=false;installAbort=null;if(temporary)await fs.unlink(temporary).catch(()=>{});}
+    }catch(error){installError=signal.aborted?'Установка отменена. Загруженная часть сохранена; можно продолжить позже.':error.name==='TimeoutError'?'Сервер релизов не ответил вовремя. Повторите установку.':error.message;log('installation-failed',{code:error.code||error.name});throw fail(installError,error.status||502);}finally{installing=false;installAbort=null;}
   })().finally(()=>{installPromise=null;});return installPromise;}
   async function verifiedExecutable(){
     await ready;if(!installation)throw fail('Сначала установите cloudflared кнопкой в SAS.');const filename=path.join(directory,installation.file),stat=await fs.lstat(filename).catch(()=>null);
@@ -75,6 +76,8 @@ export function createRoomNetwork({dataDir,getRoom,diagnostics=()=>{},fetchImpl=
     if(!['http:','https:'].includes(target.protocol)||target.username||target.password)throw fail('Нужен HTTP(S)-адрес без логина и пароля.');
     const endpoint=new URL('/room-info',target.origin);try{const response=await fetchImpl(endpoint.href,{redirect:'error',signal:AbortSignal.timeout(5000),headers:{Accept:'application/json'}});if(!response.ok)throw fail('HTTP '+response.status);const info=JSON.parse((await limitedBody(response,16384)).toString('utf8'));if(info.sasRoom!==1||typeof info.id!=='string')throw fail('По этому адресу нет комнаты SAS.');return {reachable:true,room:{id:info.id.slice(0,80),name:String(info.name||'Комната').slice(0,100),mode:['roleplay','dnd','custom'].includes(info.mode)?info.mode:'roleplay',lobby:!!info.lobby},hint:target.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(target.hostname)?'Чат и музыка доступны. Для микрофона в браузере нужен HTTPS или настольный SAS.':''};}catch{return {reachable:false,error:'Комната недоступна или адрес не является сервером комнаты SAS.',hint:fallback};}
   }
+  async function beginInstall(){await ready;const pending=install();void pending.catch(()=>{});await Promise.resolve();return status();}
+  async function cancelInstall(){installAbort?.abort();await installPromise?.catch(()=>{});return status();}
   async function close(){closed=true;installAbort?.abort();await installPromise?.catch(()=>{});await stop();await ready;}
-  return {ready,status,install,start,stop,diagnose,close};
+  return {ready,status,install,beginInstall,cancelInstall,isInstalling:()=>installing,start,stop,diagnose,close};
 }

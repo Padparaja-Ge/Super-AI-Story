@@ -9,3 +9,6 @@
 .silero-settings{display:grid;gap:16px;padding:16px;border:1px solid var(--border);border-radius:12px}.silero-settings h4{margin:0}.silero-languages{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:16px}.silero-language{display:grid;align-content:start;gap:10px;padding:14px;border:1px solid var(--border);border-radius:10px;min-width:0}.silero-language p{margin:0}.silero-language button{justify-self:start}.silero-toggles{display:grid;align-content:center;gap:12px}.speech-model-path{max-width:100%;overflow-wrap:anywhere}.voice-assignment-silero{grid-template-columns:minmax(130px,1.1fr) repeat(2,minmax(140px,1fr))}.voice-assignment-silero>.field{min-width:0}.voice-assignment-silero select{width:100%}@media(max-width:800px){.voice-assignment-silero{grid-template-columns:1fr 1fr}.voice-assignment-silero>strong{grid-column:1/-1}}@media(max-width:600px){.silero-settings{padding:12px}.voice-assignment-silero{grid-template-columns:1fr}}
 
 .silero-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px}.silero-toggle>span{font-size:.85rem}
+
+.speech-install-file{overflow-wrap:anywhere;max-width:100%;font-size:.85rem}.speech-install>strong{flex-basis:100%}
+.speech-model{min-width:0}.speech-model button{white-space:normal;overflow-wrap:anywhere;line-height:1.35;min-width:0}

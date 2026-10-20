@@ -64,6 +64,14 @@ test('playlist timing and microphone diagnosis distinguish HTTP LAN from support
   assert.equal(microphoneUnavailableReason({isSecureContext:true,navigator:{mediaDevices:{getUserMedia(){}}},RTCPeerConnection(){}}),'');
   const settings=normalizeVoiceSettings({gain:'bad',mode:'invalid',key:'ShiftLeft',voiceVolume:200,inputDevice:{},muted:'no'});assert.equal(settings.gain,1);assert.equal(settings.voiceVolume,1);assert.equal(settings.mode,'push');assert.equal(settings.key,'KeyV');assert.equal(settings.inputDevice,'');assert.equal(settings.muted,true);
 });
+
+test('Voice reconnect carries session identities and rejects late leave/signals from the old connection',async t=>{
+ const {controller,delivered}=await fixture(t),a={id:'player-a'},b={id:'player-b'},old='session-aaaaaaaaaaaa',current='session-bbbbbbbbbbbb',other='session-cccccccccccc';
+ controller.command(a,{action:'join',session:old});controller.command(b,{action:'join',session:other});controller.command(a,{action:'join',session:current});
+ assert.throws(()=>controller.command(a,{action:'leave',session:old}),e=>e.status===409);assert.equal(controller.publicState().voice.participants.find(p=>p.id===a.id).session,current);
+ controller.command(a,{action:'signal',session:current,target:b.id,signal:{description:{type:'offer',sdp:'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'}}});assert.equal(delivered.at(-1).event.fromSession,current);assert.equal(delivered.at(-1).event.toSession,other);
+ assert.throws(()=>controller.command(a,{action:'muted',session:old,muted:false}),e=>e.status===409);assert.throws(()=>normalizeIceServers([{urls:'turn:relay.test:3478'}]),/логин и пароль/);
+});
 test('Only host can force-mute admitted players, including before voice join; prohibition survives leave and reconnect',async t=>{
  const {controller,room,events}=await fixture(t),host={id:'host'},a={id:'player-a'},b={id:'player-b'},before=JSON.stringify(room);
  assert.throws(()=>controller.command(a,{action:'moderate',target:b.id,muted:true}),e=>e.status===403);

@@ -63,7 +63,7 @@ export function createMultiplayerClient({getState,saveState,dataDir,canAutoSave=
         } else if(data.type==='media') {
           session.room.media=data.media;
         } else if(data.type==='voice-signal') {
-          session.voiceSignals=[...(session.voiceSignals||[]),{id:Date.now()+Math.random(),from:data.from,signal:data.signal}].slice(-128);
+          session.voiceSignals=[...(session.voiceSignals||[]),{id:data.id,from:data.from,fromSession:data.fromSession,toSession:data.toSession,signal:data.signal}].slice(-128);
         } else if(data.type==='message'||data.type==='edit'){
           archive.set(data.message.id,data.message);
           const index=session.messages.findIndex(m=>m.id===data.message.id);

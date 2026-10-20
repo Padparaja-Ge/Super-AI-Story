@@ -3,12 +3,12 @@ import {createNetworkPolicy,networkInterfaces} from './network.mjs';
 import http from 'node:http';
 import https from 'node:https';
 import crypto from 'node:crypto';
-import {spawn} from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defaultDataDir, projectRoot } from './store.mjs';
 import { readCore,coreVersion } from './shared-core.mjs';
 import { startServer } from './index.mjs';
+import {launchCore} from './core-startup.mjs';
 
 const loginPage=`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход · SAS</title><style>body{background:#10121b;color:#e8e3f5;font:16px system-ui;display:grid;place-items:center;min-height:95vh;margin:0}main{width:min(85vw,380px)}input,button{font:inherit;border:1px solid #544564;border-radius:12px;padding:14px;box-sizing:border-box;width:100%;margin:10px 0}input{background:#1c1e2b;color:inherit}button{background:#ac89ee;cursor:pointer}p{line-height:1.6;color:#b7adc7}</style><main><h1>Super AI Story</h1><p>Введите ключ доступа из настроек веб-сервера или файла web-server.json.</p><form method="post" action="/auth/login"><input type="password" name="password" aria-label="Ключ доступа" autocomplete="current-password" required autofocus><button>Открыть студию</button></form></main></html>`;
 const loopback=host=>['127.0.0.1','localhost','::1','[::1]'].includes(host);
@@ -26,7 +26,7 @@ export async function startWebServer({port,host,dataDir=defaultDataDir,mode='ful
     const next=desktop?'':(passwordOverride??network.read().accessKey);
     if(next!==password){password=next;sessionSecret=crypto.randomBytes(32);attempts.clear();}
   };
-  let ownedCore,starting,closed=false,leaseOrigin='',spawnError='';
+  let ownedCore,starting,closed=false,leaseOrigin='';
   const leaseId=crypto.randomUUID();
   const lease=async(origin,release=false)=>{if(!origin)return;await fetch(origin+'/api/internal/lease',{method:'POST',headers:{'Content-Type':'application/json','X-SAS-Client':'shell'},body:JSON.stringify({id:leaseId,release}),signal:AbortSignal.timeout(3000)});};
   const coreOrigin=existing=>{if(existing.version!==coreVersion)throw new Error('Запущено ядро другой версии SAS. Закройте предыдущие окна и веб-серверы, подождите 30 секунд и повторите запуск. Данные сохранятся.');return `http://127.0.0.1:${existing.port}`;};
@@ -36,13 +36,8 @@ export async function startWebServer({port,host,dataDir=defaultDataDir,mode='ful
     if(mode==='shell')throw new Error('Оболочка ожидает ядро SAS. Запустите desktop или полный веб-сервер с тем же SAS_DATA_DIR.');
     try{
       if(coreMode==='embedded'){ownedCore=await startServer({port:0,dataDir});return `http://127.0.0.1:${ownedCore.port}`;}
-      // Windows requires a physical working directory; Electron loads the worker from app.asar.
-      const workerCwd=projectRoot.endsWith('.asar')?path.dirname(projectRoot):projectRoot;
-      const child=spawn(process.execPath,[path.join(projectRoot,'server','core-worker.mjs')],{cwd:workerCwd,env:{...process.env,SAS_DATA_DIR:dataDir,SAS_CORE_IDLE_MS:String(coreIdleMs),ELECTRON_RUN_AS_NODE:'1'},windowsHide:true,detached:true,stdio:'ignore'});
-      onProgress(50,'Запускаем ядро и открываем истории');
-      child.on('error',error=>{spawnError=error.message;});child.unref();
-      for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,100));existing=readCore(dataDir);if(existing)return coreOrigin(existing);if(spawnError)throw new Error(spawnError);}
-      throw new Error('Ядро SAS не запустилось. Проверьте Node.js и доступ к каталогу данных.');
+      existing=await launchCore({projectRoot,dataDir,idleMs:coreIdleMs,onProgress});
+      return coreOrigin(existing);
     }
     catch(error){if(error.code!=='SAS_BACKEND_RUNNING')throw error;for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,100));existing=readCore(dataDir);if(existing)return coreOrigin(existing);}throw error;}
   })().finally(()=>{starting=null;});

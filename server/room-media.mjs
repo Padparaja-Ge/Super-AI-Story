@@ -21,6 +21,7 @@ export function normalizeIceServers(input=[]){
     if(!server||typeof server!=='object')throw fail('Неверная настройка ICE-сервера.');
     const urls=Array.isArray(server.urls)?server.urls:[server.urls];
     if(!urls.length||urls.length>8||urls.some(url=>typeof url!=='string'||url.length>512||!/^stuns?:[^\s@]+$|^turns?:[^\s@]+$/.test(url)))throw fail('Нужен STUN/TURN-адрес без пробелов и встроенного пароля.');
+    if(urls.some(url=>/^turns?:/.test(url))&&(!server.username||!server.credential||typeof server.username!=='string'||typeof server.credential!=='string'))throw fail('Для TURN укажите строковые логин и пароль (username и credential).');
     return {urls,...(server.username?{username:String(server.username).slice(0,256)}:{}),...(server.credential?{credential:String(server.credential).slice(0,512)}:{})};
   });
 }
@@ -43,7 +44,7 @@ export function createRoomMedia({getRoom,saveRoom,broadcast=()=>{},deliver=()=>{
   const room=()=>getRoom()||{};
   function resetScope(){if(activeRoom!==room().id){activeRoom=room().id;voice.clear();signalsByActor.clear();rates.clear();forcedMuted.clear();}}
   function state(){resetScope();const current=room().media||{};return {tracks:Array.isArray(current.tracks)?current.tracks:[],currentId:current.currentId||'',playing:!!current.playing,position:Number(current.position)||0,updatedAt:Number(current.updatedAt)||now(),loop:current.loop!==false,iceServers:current.iceServers||[]};}
-  function publicState(){const current=state();return {playlist:{tracks:current.tracks.map(({id,name,mime,bytes})=>({id,name,mime,bytes})),currentId:current.currentId,playing:current.playing,position:current.position,updatedAt:current.updatedAt,loop:current.loop},voice:{participants:[...voice.values()].map(({id,name,muted})=>({id,name,muted:!!muted||forcedMuted.has(id),forcedMuted:forcedMuted.has(id)})),forcedMuted:[...forcedMuted],iceServers:current.iceServers}};}
+  function publicState(){const current=state();return {playlist:{tracks:current.tracks.map(({id,name,mime,bytes})=>({id,name,mime,bytes})),currentId:current.currentId,playing:current.playing,position:current.position,updatedAt:current.updatedAt,loop:current.loop},voice:{participants:[...voice.values()].map(({id,name,muted,session})=>({id,name,...(session?{session}:{}),muted:!!muted||forcedMuted.has(id),forcedMuted:forcedMuted.has(id)})),forcedMuted:[...forcedMuted],iceServers:current.iceServers}};}
   const notify=()=>broadcast({type:'media',media:publicState()});
   const persist=current=>{const value={...current};saveRoom(value);notify();return publicState();};
   const root=()=>{if(!idPattern.test(room().id||''))throw fail('Откройте комнату перед загрузкой музыки.');return path.join(dataDir,'room-media',room().id);};
@@ -91,14 +92,16 @@ export function createRoomMedia({getRoom,saveRoom,broadcast=()=>{},deliver=()=>{
     }
     if(payload.action==='join'){
       if(voice.size>=12&&!voice.has(peer.id))throw fail('В голосовой связи могут участвовать до 12 человек.');
-      voice.set(peer.id,{id:peer.id,name:participant.name||peer.name||'Участник',muted:true});notify();return publicState();
+      if(payload.session!==undefined&&(typeof payload.session!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(payload.session)))throw fail('Неверная сессия голосовой связи.');
+      signalsByActor.delete(peer.id);voice.set(peer.id,{id:peer.id,name:participant.name||peer.name||'Участник',muted:true,...(payload.session?{session:payload.session}:{})});notify();return publicState();
     }
-    if(payload.action==='leave'){disconnected(peer);return publicState();}
+    if(payload.action==='leave'){const current=voice.get(peer.id);if(payload.session&&current?.session&&payload.session!==current.session)throw fail('Сессия голосовой связи уже завершена.',409);disconnected(peer);return publicState();}
     const own=voice.get(peer.id);if(!own)throw fail('Сначала включите голосовую связь.');
+    if(payload.session&&own.session&&payload.session!==own.session)throw fail('Сессия голосовой связи уже завершена.',409);
     if(payload.action==='muted'){if(payload.muted===false&&forcedMuted.has(peer.id))throw fail('Ведущий отключил ваш микрофон.',403);own.muted=payload.muted!==false;notify();return publicState();}
     if(payload.action!=='signal')throw fail('Неизвестная команда голосовой связи.');
     if(payload.target===peer.id||!voice.has(payload.target)||!member(payload.target))throw fail('Участник не подключён к голосовой связи.',404);
-    const signal=validateVoiceSignal(payload.signal),event={type:'voice-signal',id:++sequence,from:peer.id,signal};
+    const signal=validateVoiceSignal(payload.signal),event={type:'voice-signal',id:++sequence,from:peer.id,...(own.session?{fromSession:own.session}:{}),...(voice.get(payload.target).session?{toSession:voice.get(payload.target).session}:{}),signal};
     const events=signalsByActor.get(payload.target)||[];events.push(event);signalsByActor.set(payload.target,events.slice(-128));deliver(payload.target,event);return {ok:true};
   }
   function disconnected(peer){if(voice.delete(peer.id)){signalsByActor.delete(peer.id);notify();}}

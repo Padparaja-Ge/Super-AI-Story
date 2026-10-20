@@ -7,6 +7,15 @@ const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).dige
 const canonicalActor=({online,avatar,...actor})=>actor;
 const canonicalPersona=({avatar,...persona})=>persona;
 const canonicalMap=map=>{if(!map)return map;const {imageId,...geometry}=map;return geometry;};
+export const narrationFormatInstruction='Выдавай только художественное повествование и реплики NPC. Не печатай служебные заголовки «Раунд N · Рассказчик», имена ролей, этапы генерации или таблицы расчётов: они уже показаны интерфейсом.';
+export function cleanNarration(text){
+ return String(text).replace(/^[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*Раунд[ \t]+\d+[ \t]*[·:—–-][ \t]*(?:Рассказчик|Ведущий|AI[ -]?(?:Game Master|ведущий)|GM)[ \t]*[*_`]*[ \t]*:?[ \t]*(?:\r?\n|$)/gimu,'').trim();
+}
+export function publicRegeneration(room,state){
+ const record=room.lastNarration,last=room.messages?.filter(m=>m.kind!=='image').at(-1);
+ if(!record||last?.id!==record.messageId||last.role!=='assistant'||last.interrupted||room.narration)return undefined;
+ return {messageId:record.messageId,canRegenerate:record.contextHash===narrationContextHash(room,record.messageId)&&record.referencesHash===narrationReferencesHash(state,room)};
+}
 export function narrationContextHash(room,messageId){
   return hash({id:room.id,mode:room.mode,scene:room.scene,storybook:room.storybook,lorebookIds:room.lorebookIds,rulebookIds:room.rulebookIds,personas:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,canonicalPersona(p)])),
     messages:(room.messages||[]).filter(m=>m.id!==messageId&&m.kind!=='image').map(m=>({id:m.id,content:m.content,role:m.role})),

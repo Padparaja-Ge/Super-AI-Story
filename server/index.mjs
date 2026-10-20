@@ -31,6 +31,7 @@ import {createExtensions} from './extensions.mjs';
 import {createDiagnostics} from './diagnostics.mjs';
 import {createRoomNetwork} from './room-network.mjs';
 import {createRoomDiscovery} from './room-discovery.mjs';
+import {createGuidePreferences} from './onboarding.mjs';
 
 const isLoopback = address => address === '::1' || /^127\./.test(address || '') || /^::ffff:127\./.test(address || '');
 
@@ -96,6 +97,9 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.use('/api/translate', createTranslationRouter({ translationService, getSettings: () => getState().settings.translation }));
   app.use('/api/multiplayer/restore',express.json({limit:'65mb'}));
   app.use(express.json({ limit: '24mb' }));
+  const guidePreferences=createGuidePreferences(store.dataDir||dataDir);
+  app.get('/api/onboarding',async(_req,res)=>res.json({preferences:await guidePreferences.read()}));
+  app.put('/api/onboarding',async(req,res)=>res.json({preferences:await guidePreferences.write(req.body)}));
   app.use((req,res,next)=>{const started=Date.now();res.once('finish',()=>{if(res.statusCode>=400)diagnostics.record('http_failed',{method:req.method,route:req.route?.path||'unmatched',status:res.statusCode,durationMs:Date.now()-started});});next();});
   app.use((req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store'); next(); });
   app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Super AI Story', version: coreVersion }));
@@ -106,7 +110,7 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
     lastLease=Date.now();res.json({ok:true});
   });
   app.use((req,res,next)=>{
-    if(!req.path.startsWith('/api/speech/sessions')&&tasks.busy()&&!['GET','HEAD','OPTIONS'].includes(req.method)){
+    if(req.path!=='/api/onboarding'&&!req.path.startsWith('/api/speech/sessions')&&tasks.busy()&&!['GET','HEAD','OPTIONS'].includes(req.method)){
       const allowed=/^\/api\/(tasks\/stop|diagnostics\/frontend|chats\/[^/]+\/(stop|render)|prompt|grammar|translate|multiplayer\/(message|stop|media|voice|lobby|players\/[^/]+|client\/(message|dice|leave|voice|lobby-ready))|images\/[^/]+\/cancel)$/.test(req.path);
       if(!allowed)return res.status(409).json({error:'Идёт генерация. Дождитесь ответа или остановите её перед изменением настроек.'});
     }
@@ -258,7 +262,8 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.post('/api/multiplayer/stop', async (req, res) => {await roomNetwork.stop();await discovery.close();res.json(await multiplayer.stop());});
   app.get('/api/multiplayer/local-rooms',async(_req,res)=>res.json({rooms:await discovery.scan(),...discovery.status()}));
   app.get('/api/multiplayer/network',async(_req,res)=>{await roomNetwork.ready;res.json({...roomNetwork.status(),discovery:discovery.status()});});
-  app.post('/api/multiplayer/network/install',async(_req,res)=>res.json(await roomNetwork.install()));
+  app.post('/api/multiplayer/network/install',async(_req,res)=>res.status(202).json(await roomNetwork.beginInstall()));
+  app.post('/api/multiplayer/network/install/cancel',async(_req,res)=>res.json(await roomNetwork.cancelInstall()));
   app.post('/api/multiplayer/network/start',async(_req,res)=>res.json(await roomNetwork.start()));
   app.post('/api/multiplayer/network/stop',async(_req,res)=>res.json(await roomNetwork.stop()));
   app.post('/api/multiplayer/diagnose',async(req,res)=>res.json(await roomNetwork.diagnose(req.body?.url)));

@@ -89,11 +89,13 @@ export function createSileroSupport({root,bundledRoot,readRegistry,updateRegistr
   if(modelId&&!sileroModel(modelId))throw fail('Неизвестная модель Silero.');
   const chosen=runtimeOnly?[]:modelId?[sileroModel(modelId)]:sileroModels.filter(m=>m.bundled),storage=await root(),folder=await safeFolder(storage,'models','silero');
   job.total=chosen.reduce((n,m)=>n+m.bytes,0);
+  job.phase='weights';
   for(const m of chosen){
    job.stage='Загрузка Silero '+m.id;
    await downloadSileroModel(m,path.join(folder,m.file.path),{signal:job.controller.signal,onBytes:n=>job.downloaded+=n});
    await fs.writeFile(markerPath(folder,m),JSON.stringify({id:m.id,size:m.bytes,sha256:m.file.sha256,revision:m.revision}));
   }
+  job.phase='runtime';
   const runtime=await installRuntime(storage,device,job,{bundledRoot});
   await updateRegistry(registry=>{registry.silero={...registry.silero,folder,runtimes:{...registry.silero?.runtimes,[device]:runtime}};});
  }

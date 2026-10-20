@@ -15,6 +15,9 @@ import {roomChat} from '../server/room-memory.mjs';
 import {messageTokens,buildPrompt} from '../server/prompt.mjs';
 const seed=JSON.parse(await fs.readFile(new URL('../shared/seed.json',import.meta.url),'utf8'));
 const persona={id:'srp',name:'Рей',avatar:'R',kind:'srp',className:'Воин',abilities:defaultAbilities()};
+test('Narration removes malformed service round headings without removing story text or dialogue',async()=>{
+ const {cleanNarration}=await import('../server/room-narration.mjs');assert.equal(cleanNarration('*Раунд 3 · Рассказчик**\nСтраж открыл дверь.'),'Страж открыл дверь.');assert.equal(cleanNarration('**Раунд 12 · Ведущий**\r\nГерои услышали шум.'),'Герои услышали шум.');assert.equal(cleanNarration('— Раунд 3 · Рассказчик, — прочёл он.'),'— Раунд 3 · Рассказчик, — прочёл он.');
+});
 async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-narration-')),calls=[];
   const provider=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw);calls.push(body);
@@ -47,6 +50,19 @@ test('D&D length finish automatically completes one message and advances the rou
   let step=0;const f=await fixture(t,()=>++step===1?{text:'Отряд вошёл в ',reason:'length'}:{text:'таверну. Страж кивнул.',reason:'stop'},{npc:true});
   const result=await f.room.generate();assert.equal(result.incomplete,false);assert.equal(result.message.content,'Отряд вошёл в таверну. Страж кивнул.');assert.equal(f.state.multiplayer.messages.filter(m=>m.role==='assistant').length,1);assert.equal(f.state.multiplayer.tactical.round,2);assert.equal(f.state.multiplayer.tactical.phase,'players');
   assert.equal(f.calls.filter(c=>c.messages[0].content.includes('You control only this NPC')).length,1);assert.ok(f.calls.at(-1).messages.some(m=>m.content===continuationInstruction));assert.equal(f.state.multiplayer.narration,undefined);
+});
+
+test('Regenerating GM prose preserves all combat results and round state, rejects later turns, and keeps snapshots private',async t=>{
+ let prose=0;const f=await fixture(t,()=>({text:++prose===1?'*Раунд 1 · Рассказчик**\nСтраж отступил.':'Страж пятится к двери, придерживая рану.',reason:'stop'}),{npc:true});
+ const first=await f.room.generate();assert.equal(first.message.content,'Страж отступил.');const game=structuredClone(f.state.multiplayer.tactical),beforeMessages=f.state.multiplayer.messages.length,npcCalls=f.calls.filter(c=>c.messages[0].content.includes('You control only this NPC')).length;
+ assert.equal(f.room.status().room.regeneration.canRegenerate,true);assert.equal(f.room.status().room.lastNarration,undefined);
+ const second=await f.room.generate({regenerateMessageId:first.message.id});assert.equal(second.message.id,first.message.id);assert.match(second.message.content,/пятится/);assert.deepEqual(f.state.multiplayer.tactical,game);assert.equal(f.state.multiplayer.messages.length,beforeMessages);assert.equal(f.calls.filter(c=>c.messages[0].content.includes('You control only this NPC')).length,npcCalls);
+ f.room.hostMessage('Осматриваю дверь.');await assert.rejects(f.room.generate({regenerateMessageId:first.message.id}),/новых сообщений/);assert.deepEqual(f.state.multiplayer.tactical,game);
+});
+
+test('Failed or truncated regeneration retains the last completed answer and calculated resources',async t=>{
+ let prose=0;const f=await fixture(t,()=>++prose===1?{text:'Страж открыл дверь.',reason:'stop'}:{text:'Новый вариант ',reason:'length'});const first=await f.room.generate(),game=structuredClone(f.state.multiplayer.tactical);
+ await assert.rejects(f.room.generate({regenerateMessageId:first.message.id}),/Предыдущий ответ сохранён/);assert.equal(f.state.multiplayer.messages.at(-1).content,first.message.content);assert.deepEqual(f.state.multiplayer.tactical,game);assert.equal(f.room.status().generating,false);
 });
 
 test('Three length replies persist one recoverable draft; host continuation never reapplies NPC turns',async t=>{
