@@ -17,7 +17,7 @@ async function fixture(t){
  const request=async(route,body)=>{const r=await fetch(`http://127.0.0.1:${server.port}/api${route}`,{method:'POST',headers:{'Content-Type':'application/json','X-SAS-Client':'test'},body:JSON.stringify(body)});const result=await r.json();assert.ok(r.ok,JSON.stringify(result));return result;};
  const open=()=>request('/multiplayer/start',{port:0,mode:'dnd',personaId:'host-test',newHistory:!server.app.locals.runtime.store.getState().multiplayer?.id});
  const join=(c,room)=>c.join({url:room.url,personaId:'guest-test'});
- t.after(async()=>{for(const c of clients)c.leave();await server.close();await fs.rm(dir,{recursive:true,force:true});});
+ t.after(async()=>{for(const c of clients)await c.close();await server.close();await fs.rm(dir,{recursive:true,force:true,maxRetries:3});});
  return {dir,client,join,open,request,store:()=>server.app.locals.runtime.store,restart:async()=>{await server.close();server=await startServer({port:0,dataDir:path.join(dir,'host')});}};
 }
 test('Guest returns after disconnect and both processes restart without replacing campaign resources or identity',async t=>{

@@ -3,7 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import AdmZip from 'adm-zip';
 
-const root=path.resolve(import.meta.dirname,'..');
+// Windows may provide an 8.3 alias; cleanup compares physical parent paths.
+const root=await fs.realpath(path.resolve(import.meta.dirname,'..'));
 const at=process.argv.indexOf('--archive'),filename=at>=0?process.argv[at+1]:null;
 if(!filename)throw new Error('Usage: npm run prepare:runtime -- --archive <SAS-Windows-version.zip>. No downloads are performed.');
 const file=path.resolve(filename),stat=await fs.stat(file);

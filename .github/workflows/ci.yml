@@ -20,6 +20,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Normalize Windows temporary directory
+        shell: pwsh
+        run: |
+          $temporaryPath = node -e "process.stdout.write(require('node:fs').realpathSync(require('node:os').tmpdir()))"
+          "TEMP=$temporaryPath" >> $env:GITHUB_ENV
+          "TMP=$temporaryPath" >> $env:GITHUB_ENV
       - run: npm ci
       - run: npm test
       - run: npm run build
