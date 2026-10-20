@@ -6,12 +6,12 @@
 
 **Персонажи, фанфики и совместные приключения с языковыми моделями.**
 
-[![Release](https://img.shields.io/github/v/release/Padparaja-Ge/Super-AI-Story?label=Скачать&color=9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/latest)
+[![Скачать SAS 0.9.6](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v0.9.6-9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/tag/v0.9.6)
 [![License](https://img.shields.io/badge/Код-Apache--2.0-blue)](LICENSE)
 ![Windows](https://img.shields.io/badge/Приложение-Windows%2010%2F11%20x64-0078d4)
 ![Stack](https://img.shields.io/badge/React-TypeScript%20%7C%20Node.js%20%7C%20Electron-32b8a5)
 
-[Скачать](https://github.com/Padparaja-Ge/Super-AI-Story/releases/latest) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
+[Скачать SAS 0.9.6 для Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.6/SAS-Windows-0.9.6.zip) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
 
 </div>
 
