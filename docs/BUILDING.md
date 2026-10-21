@@ -12,8 +12,8 @@
 ## Чистая установка
 
 ```sh
-git clone https://github.com/Padparaja-Ge/Super-AI-Story.git
-cd Super-AI-Story
+git clone https://github.com/Padparaja-Ge/SAS-source.git
+cd SAS-source
 npm ci
 npm test
 npm run build
@@ -68,7 +68,7 @@ npm run package:app
 Скачайте полный пакет SAS из Releases и проверьте его SHA-256 по `SHA256SUMS.txt`. Затем:
 
 ```sh
-npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.6.zip"
+npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.7.zip"
 npm run package:win
 ```
 

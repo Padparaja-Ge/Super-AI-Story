@@ -3,12 +3,34 @@ import {createMemory,memoryDue,validMemory} from './memory.mjs';
 import {complete,getConnection} from './llm.mjs';
 import {cosine} from './embeddings.mjs';
 import {roomEmbeddingState} from './room-models.mjs';
+import {gamePersonaName,gameIdentityProjector,isGameRoom} from './room-identities.mjs';
 
 export const roomMemoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,memoryMode:'hybrid',memoryBudget:1000,historyLimit:40,loreBudget:1000};
 export function roomChat(room,base={}){
+  if(isGameRoom(room))return gameRoomChat(room,base);
   const engine=(room.tactical?.eventArchive||[]).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
   const messages=[...(room.messages||[]).filter(m=>m.kind!=='image'&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>({...m,content:m.role==='user'?`${m.name||'Игрок'} (${m.personaName||m.name||'Игрок'}): ${m.content}`:m.content})),...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
   return {...base,id:'room-'+room.id,summary:room.summary||'',memory:room.memory||[],memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages};
+}
+function gameRoomChat(room,base){
+ const migrated=new Map(),project=gameIdentityProjector(room);
+ const messages=(room.messages||[]).filter(m=>m.kind!=='image'&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>{
+  if(m.role!=='user'){
+   const renamed=project.source(m.content);
+   migrated.set(m.id,{oldHash:fingerprint(m.role+'\n'+m.content),hash:fingerprint(m.role+'\n'+renamed.content),offset:renamed.offset});
+   return {...m,content:renamed.content};
+  }
+  const name=gamePersonaName(room,m),old=`${m.name||'Игрок'} (${m.personaName||m.name||'Игрок'}): ${m.content}`,content=`${name}: ${m.content}`;
+  migrated.set(m.id,{oldHash:fingerprint(m.role+'\n'+old),hash:fingerprint(m.role+'\n'+content),oldPrefix:old.length-m.content.length,newPrefix:content.length-m.content.length});
+  return {...m,name,personaName:name,content};
+ });
+ const memory=(room.memory||[]).map(block=>({...block,...(block.title?{title:project(block.title)}:{}),content:project(block.content),...(block.sources?{sources:block.sources.map(source=>{
+  const change=migrated.get(source.id);if(!change||source.hash!==change.oldHash)return source;
+  const offset=change.offset||(value=>value>=change.oldPrefix?value-change.oldPrefix+change.newPrefix:Math.min(value,change.newPrefix));
+  return {...source,hash:change.hash,start:offset(source.start),end:offset(source.end)};
+ })}:{})}));
+ const engine=(room.tactical?.eventArchive||[]).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
+ return {...base,id:'room-'+room.id,summary:project(room.summary),memory,memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages:[...messages,...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))};
 }
 export function roundMessages(chat){
   let start=chat.messages.length;

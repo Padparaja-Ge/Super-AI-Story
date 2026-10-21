@@ -8,7 +8,9 @@ export const runtimeFields=[
   {key:'flashAttention',label:'Flash Attention',options:['auto','on','off'],default:'auto'},
   {key:'cacheTypeK',label:'KV-кэш · ключи',options:['f16','bf16','q8_0','q4_0','q4_1','q5_0','q5_1','iq4_nl'],default:'f16'},
   {key:'cacheTypeV',label:'KV-кэш · значения',options:['f16','bf16','q8_0','q4_0','q4_1','q5_0','q5_1','iq4_nl'],default:'f16'},
-  {key:'loadMode',label:'Загрузка весов',options:['auto','mmap','none','mlock','mmap+mlock'],default:'auto',hint:'mlock удерживает веса в RAM; требует достаточного объёма памяти.'},
+  {key:'loadMode',label:'MMAP · загрузка весов',options:['auto','mmap','none','mlock','mmap+mlock'],default:'auto',hint:'mmap — отображение файла в память; none — MMAP выключен. mlock удерживает веса в RAM.'},
+  {key:'contextShift',label:'Context Shift · сдвиг контекста',options:['off','on'],default:'off',hint:'Разрешает llama.cpp сдвигать заполненный контекст при генерации. Блоки памяти SAS сохраняются отдельно.'},
+  {key:'swaCache',label:'SWA · режим KV-кэша',options:['compact','full'],default:'compact',hint:'compact — штатный скользящий кэш; full — полный размер кэша, больше расход памяти. Это управление кэшем, а не отключение SWA-attention архитектуры модели.'},
   {key:'fit',label:'Подбор по свободной VRAM',options:['on','off'],default:'on'},
   {key:'fitTarget',label:'Резерв VRAM, МБ',min:256,max:32768,step:128,default:1024},
   {key:'opOffload',label:'Вычисления служебных операций',options:['on','off'],default:'on'},
@@ -29,6 +31,9 @@ export const samplingFields=[
   {key:'topK',label:'Top K',min:0,max:1000,step:1,default:40},
   {key:'topP',label:'Top P',min:0,max:1,step:.01,default:.95},
   {key:'minP',label:'Min P',min:0,max:1,step:.01,default:.05},
+  {key:'topNSigma',label:'Top N Sigma · nsigma',min:-1,max:100,step:.1,default:-1,hint:'-1 — выключено. Отбор токенов по отклонению логитов.'},
+  {key:'adaptiveTarget',label:'Adaptive P · целевая вероятность',min:-1,max:1,step:.01,default:-1,hint:'-1 — выключено; 0–1 — целевая вероятность adaptive-p. Не включается автоматически.'},
+  {key:'adaptiveDecay',label:'Adaptive P · затухание',min:0,max:.99,step:.01,default:.9},
   {key:'typicalP',label:'Typical P',min:0,max:1,step:.01,default:1},
   {key:'repeatPenalty',label:'Штраф повторений',min:0,max:3,step:.05,default:1},
   {key:'repeatLastN',label:'Окно повторений',min:-1,max:131072,step:1,default:64},
@@ -59,5 +64,5 @@ export function normalizeOptions(input={},fields=runtimeFields){
 }
 export function samplingBody(input={}){
   const s=normalizeOptions(input,samplingFields),names={topK:'top_k',topP:'top_p',minP:'min_p',typicalP:'typical_p',repeatPenalty:'repeat_penalty',repeatLastN:'repeat_last_n',presencePenalty:'presence_penalty',frequencyPenalty:'frequency_penalty',dryMultiplier:'dry_multiplier',dryBase:'dry_base',dryAllowedLength:'dry_allowed_length',dryPenaltyLastN:'dry_penalty_last_n',xtcProbability:'xtc_probability',xtcThreshold:'xtc_threshold',dynatempRange:'dynatemp_range',dynatempExponent:'dynatemp_exponent',mirostat:'mirostat',mirostatTau:'mirostat_tau',mirostatEta:'mirostat_eta',seed:'seed'};
-  return Object.fromEntries(Object.entries(names).map(([key,name])=>[name,Number(s[key])]));
+  return {...Object.fromEntries(Object.entries(names).map(([key,name])=>[name,Number(s[key])])),top_n_sigma:s.topNSigma,adaptive_target:s.adaptiveTarget,adaptive_decay:s.adaptiveDecay};
 }

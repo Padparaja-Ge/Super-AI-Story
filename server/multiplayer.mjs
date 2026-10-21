@@ -29,7 +29,8 @@ import {historySummaries,selectRoomHistory,deleteRoomHistory} from './room-histo
 import { publicPersona } from './room-rewrite.mjs';
 import {createRoomMemory,roomChat,roomMemoryDefaults,roundMessages,extractiveProtocol} from './room-memory.mjs';
 import {fitNarrationPrompt,narrationContextHash,narrationReferencesHash,publicNarration,createNarrationContinuationJoiner} from './room-narration.mjs';
-import {publicRegeneration,cleanNarration,narrationFormatInstruction} from './room-narration.mjs';
+import {publicRegeneration,cleanNarration,narrationFormatInstruction,narrationStops} from './room-narration.mjs';
+import {gameIdentityProjector} from './room-identities.mjs';
 
 export function invitationUrls(port,code,interfaces=os.networkInterfaces()) {
   return Object.entries(interfaces).flatMap(([name,items])=>(items||[]).filter(i=>i.family==='IPv4').map(i=>({name,address:i.address,url:`http://${i.address}:${port}/play?code=${encodeURIComponent(code)}`})));
@@ -124,7 +125,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     const roomContext=roomChat(room,{...chat,personaId:'',lorebookIds:[...new Set(room.lorebookIds||[])],scene:room.scene||emptyScene()});
     const modelState=roomModelState(state,room);
     const promptState={...modelState,...(isGame(room)?{activePresetId:''}:{}),personas:[],characters:[...state.characters.map(c=>({...c,personaId:''})),...(isGame(room)?[gameCharacter]:[])],plugins:isGame(room)?[]:state.plugins,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>({...b,entries:b.entries.map(e=>({...e,name:`Лорбук «${b.name}» · ${e.name}`}))})),settings:{...modelState.settings,userName:'Участники комнаты',narrative:isGame(room)?{mode:'gamemaster',tense:'present',perspective:'third',length:'medium',instructions:''}:{...state.settings.narrative,mode:'gamemaster'}},chats:[roomContext]};
-    const descriptions=Object.entries(room.personas||{}).map(([id,p])=>`${id==='host'?hostName:messages().find(m=>m.userId===id)?.name||p.name}: ${p.name}. ${p.description||''} ${p.appearance||''} ${p.personality||''}`).join('\n');
+    const descriptions=Object.entries(room.personas||{}).map(([id,p])=>`${isGame(room)?p.name:(id==='host'?hostName:messages().find(m=>m.userId===id)?.name||p.name)+': '+p.name}. ${p.description||''} ${p.appearance||''} ${p.personality||''}`).join('\n');
     let priorityInstructions='';
     let extraInstructions='Ты ведущий совместной истории. Учитывай действия всех участников и не решай за игроков. Броски кубиков в истории — уже полученные результаты.\nПерсоны участников:\n'+descriptions;
     if(isGame(room)){
@@ -331,21 +332,22 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
   }
   function requiredNarrationMessages(instructions,posts,connection){
     const available=(Number(connection.contextWindow)||8192)-Math.min(Number(connection.maxTokens)||1024,(Number(connection.contextWindow)||8192)/2);
-    const perPost=Math.max(200,Math.min(1200,Math.floor(available*.2*3/Math.max(1,posts.length))));
+    const capacity=Math.max(600,Math.floor(available*.42)*3),postsFit=posts.reduce((sum,m)=>sum+m.content.length,0)<=capacity;
+    const perPost=Math.max(150,Math.floor(capacity/Math.max(1,posts.length)));
     const actors=roomData()?.tactical?.actors||[],players=actors.filter(a=>a.player).map(a=>a.name),npcs=actors.filter(a=>!a.player&&a.hp>0).map(a=>a.name);
     const ownership='[SAS_ROLE_OWNERSHIP] Игровые герои: '+players.join(', ')+'. Их новые действия и прямые реплики пишет только соответствующий игрок; ты не можешь дописать их ход. Живые NPC, которыми ты управляешь: '+(npcs.join(', ')||'на столе нет; можно описывать окружение и появление новых NPC')+'. Если герой ждёт, описывай то, что доступно ему без движения и без новой реплики от его имени.';
-    return [{role:'system',content:instructions+'\n'+ownership},{role:'user',content:'[SAS_CURRENT_PLAYER_REQUESTS] Текущие действия и вопросы КАЖДОГО игрока (это запросы, не уже выполненные NPC события):\n'+posts.map(m=>`${m.name||m.personaName||'Игрок'}: ${extractiveProtocol(m.content,perPost)}`).join('\n\n')+'\nЗакончи повествование только этого раунда на русском, Развей ситуацию конкретным ВНЕШНИМ событием или доступной зацепкой к цели Story book с учётом выбранного игроками пути. Новые действия, перемещения и реплики могут принадлежать только NPC, а не игрокам. Не заставляй игроков брать предметы или отвечать. Затем оставь следующие решения игрокам.\n'+ownership}];
+    return [{role:'system',content:instructions+'\n'+ownership},{role:'user',content:'[SAS_CURRENT_PLAYER_REQUESTS] Текущие действия и вопросы КАЖДОГО игрока (это запросы, не уже выполненные NPC события):\n'+posts.map(m=>{const name=m.personaName||m.name||'Герой',body=m.content.startsWith(name+': ')?m.content.slice(name.length+2):m.content;return `${name}: ${extractiveProtocol(body,postsFit?body.length:perPost)}`;}).join('\n\n')+'\nЗакончи повествование на русском. Ответь на текущие вопросы прямыми репликами NPC, сохрани точные имена, числа и условия из источников. Не перечисляй расчёты и ресурсы. Развей ситуацию конкретным ВНЕШНИМ событием или доступной зацепкой к цели Story book с учётом выбранного игроками пути. Новые действия, перемещения и реплики могут принадлежать только NPC, а не игрокам. Не заставляй игроков брать предметы или отвечать. Затем оставь следующие решения игрокам.\n'+ownership}];
   }
   async function regenerateNarration(messageId,signal){
     const initial=getState(),room=initial.multiplayer,allowed=publicRegeneration(room,initial),record=room.lastNarration;
     if(allowed?.messageId!==messageId||!allowed.canRegenerate||!record?.promptMessages?.length)throw Object.assign(new Error('Перегенерация доступна до новых сообщений и действий игроков. Уже выполненные ходы не переигрываются.'),{status:409});
     const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();generation=controller;notify();
     try{
-      const {state,chat}=context(),connection=getConnection(state,chat);let text='',reason='';
+      const {state,chat}=context(),connection=getConnection(state,chat),started=performance.now();let text='',reason='',firstTokenAt,lastTimings;
       for(let attempt=0;attempt<3;attempt++){
-        const fitted=await fitNarrationPrompt(connection,getSecret(connection.id),record.promptMessages,{text,maxTokens:connection.maxTokens||record.maxTokens,priorityMessages:record.priorityMessages||[],signal:controller.signal,adaptInstruction:isGame(),instruction:undefined});
+        const project=gameIdentityProjector(roomData()),fitted=await fitNarrationPrompt(connection,getSecret(connection.id),record.promptMessages.map(m=>({...m,content:project(m.content)})),{text:project(text),maxTokens:connection.maxTokens||record.maxTokens,priorityMessages:(record.priorityMessages||[]).map(m=>({...m,content:project(m.content)})),signal:controller.signal,adaptInstruction:isGame(),instruction:undefined});
         const joiner=text?createNarrationContinuationJoiner(text):undefined;reason='';const before=text.length;
-        try{for await(const chunk of streamCompletion(connection,getSecret(connection.id),fitted.messages,{signal:controller.signal,adaptInstruction:isGame(),onFinish:finish=>{reason=finish;},preset:{...state.presets?.find(p=>p.id===(chat.presetId||state.activePresetId)),maxTokens:fitted.maxTokens}})){text+=joiner?joiner.push(chunk):chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');}}
+        try{for await(const chunk of streamCompletion(connection,getSecret(connection.id),fitted.messages,{signal:controller.signal,adaptInstruction:isGame(),disableThinking:isGame(),stop:isGame()?narrationStops(roomData().tactical.round):undefined,onTimings:timings=>{lastTimings=timings;},onFinish:finish=>{reason=finish;},preset:{...state.presets?.find(p=>p.id===(chat.presetId||state.activePresetId)),maxTokens:fitted.maxTokens}})){if(chunk)firstTokenAt??=performance.now();text+=joiner?joiner.push(chunk):chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');}}
         finally{if(joiner)text+=joiner.flush();}
         if(text.length===before)throw new Error('Модель не вернула новый вариант. Предыдущий ответ сохранён.');
         if(reason!=='length')break;
@@ -353,7 +355,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       text=cleanNarration(text);if(!text||reason==='length')throw new Error('Новый вариант не завершён. Предыдущий ответ сохранён; увеличьте лимит ответа и повторите.');
       controller.signal.throwIfAborted();const fresh=getState();if(fresh.multiplayer?.id!==room.id||!publicRegeneration(fresh.multiplayer,fresh)?.canRegenerate)throw new Error('Контекст изменился. Предыдущий ответ сохранён.');
       const message=fresh.multiplayer.messages.find(m=>m.id===messageId);message.content=text;message.regeneratedAt=new Date().toISOString();delete message.translatedContent;delete message.originalContent;
-      fresh.multiplayer.lastNarration.contextHash=narrationContextHash(fresh.multiplayer,messageId);persist(fresh);broadcast({type:'edit',message});
+      fresh.multiplayer.lastNarration.contextHash=narrationContextHash(fresh.multiplayer,messageId);fresh.multiplayer.contextReport={...fresh.multiplayer.contextReport,performance:{totalMs:Math.round(performance.now()-started),firstTokenMs:firstTokenAt?Math.round(firstTokenAt-started):null,...(lastTimings?{promptTokens:lastTimings.prompt_n,outputTokens:lastTimings.predicted_n,tokensPerSecond:lastTimings.predicted_per_second}:{})}};persist(fresh);broadcast({type:'edit',message});
       try{const refreshed=context(),scene=await inferScene(refreshed.state,{...refreshed.chat,scene:record.sceneBefore||refreshed.chat.scene},getSecret,controller.signal);if(scene){const latest=getState();if(latest.multiplayer?.id===room.id){latest.multiplayer.scene={...latest.multiplayer.scene,...scene};latest.multiplayer.lastNarration.contextHash=narrationContextHash(latest.multiplayer,messageId);persist(latest);}}}catch{}return {message,regenerated:true,incomplete:false};
     }finally{signal?.removeEventListener('abort',abort);if(generation===controller)generation=undefined;notify();}
   }
@@ -376,6 +378,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     const controller=new AbortController();generation=controller;
     const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();notify();
     const id=resume?resumeId:crypto.randomUUID(),roomId=roomData().id,gameMode=isGame(roomData()),narratorName=gameMode?'AI Game Master':getState().characters.find(c=>c.id===getState().chats.find(ch=>ch.id===roomData().chatId)?.characterId)?.name||'Ведущий';
+    const generationStarted=performance.now();let firstTokenAt,lastTimings;
     let text=resume?room.messages.find(m=>m.id===id).content:'',finishReason='',automatic=0,lastSave=0,sourcePrompt,promptMaxTokens,priorityMessages=[];
     const updateMessage=(incomplete,error='')=>{
       const fresh=getState();if(fresh.multiplayer?.id!==roomId)throw new Error('История комнаты изменилась.');
@@ -414,7 +417,8 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         if(!connection.model)throw new Error('Выберите модель в подключениях.');
         const recalled=await roomMemory.recall(state,chat,controller.signal);
         const round=gameMode?await roomMemory.compactRound(state,chat,{signal:controller.signal,onProgress:progress}):{messages:[],compressed:[]};
-        const historyMessages=round.messages.length?[...round.messages,{role:'user',content:[recalled.text,'Заверши этот раунд как ведущий на русском. Кратко отыграй последствия действий КАЖДОГО участника выше. Ответь только на ТЕКУЩИЕ вопросы игроков прямыми репликами NPC: произнеси запрошенные имена, числа, пароли и условия из подтверждённых источников точно. Не заменяй ответ фразой «NPC вспомнил». Если источники не дают ответа — NPC не знает. Цель приключения — план, а не уже выполненное событие. Вопрос об обязательстве не означает его исполнение. Текущие расчёты движка уже выполнены: не бросай кубики и не перечисляй численные HP, урон, ячейки; опиши видимый эффект, учитывая текущую таблицу ресурсов. Не пропускай участников. Не повторяй инструкции; дай только повествование и реплики NPC. Не меняй время и локацию без действий игроков; следующие решения оставь игрокам. Закончи все предложения.'].filter(Boolean).join('\n\n')}]:undefined;
+        // Current posts live once, in protected priorityMessages. References contain archive only.
+        const historyMessages=gameMode?(recalled.text?[{role:'user',content:recalled.text}]:[]):undefined;
         const options={extensionMode:state.multiplayer?.mode==='roleplay'?'multiplayer-roleplay':state.multiplayer?.mode,extraInstructions:gameMode?current.extraInstructions:[recalled.text,current.extraInstructions].filter(Boolean).join('\n\n'),compact:true,extraFirst:true,preserveHistory:gameMode,signal:controller.signal,retrieval:recalled.retrieval,...(historyMessages?{historyMessages}:{})};
         const prompt=preparePrompt?await preparePrompt(state,chat.id,'',options):buildPrompt(state,chat.id,'',options);
         sourcePrompt=prompt.messages;sourcePrompt[0]={...sourcePrompt[0],content:sourcePrompt[0].content+'\n'+narrationFormatInstruction};promptMaxTokens=prompt.budget.maxTokens;priorityMessages=gameMode?requiredNarrationMessages(current.priorityInstructions+'\n'+narrationFormatInstruction,round.messages,connection):[];
@@ -424,12 +428,12 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       for(let attempt=0;attempt<3;attempt++){
         controller.signal.throwIfAborted();const continuing=resume||attempt>0;
         progress(continuing?'Ведущий дописывает незаконченный ответ':'Ведущий описывает последствия ходов');
-        const fitted=await fitNarrationPrompt(connection,getSecret(connection.id),sourcePrompt,{text:continuing?text:'',maxTokens:promptMaxTokens,signal:controller.signal,adaptInstruction:gameMode,priorityMessages});
+        const project=gameIdentityProjector(roomData()),fitted=await fitNarrationPrompt(connection,getSecret(connection.id),sourcePrompt.map(m=>({...m,content:project(m.content)})),{text:continuing?project(text):'',maxTokens:promptMaxTokens,signal:controller.signal,adaptInstruction:gameMode,priorityMessages:priorityMessages.map(m=>({...m,content:project(m.content)}))});
         const measured=getState();measured.multiplayer.contextReport={...measured.multiplayer.contextReport,estimatedTokens:fitted.estimatedTokens,actualTokens:fitted.actualTokens,tokenizer:fitted.actualTokens===null?'estimate':'model',continuation:continuing};persist(measured);
         const before=text.length,joiner=continuing?createNarrationContinuationJoiner(text):undefined;finishReason='';
-        const appendDelta=chunk=>{if(!chunk)return;text+=chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');broadcast({type:'delta',id,text:chunk});if(Date.now()-lastSave>=500)updateMessage(true);};
+        const appendDelta=chunk=>{if(!chunk)return;firstTokenAt??=performance.now();text+=chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');broadcast({type:'delta',id,text:chunk});if(Date.now()-lastSave>=500)updateMessage(true);};
         try{
-          for await(const chunk of streamCompletion(connection,getSecret(connection.id),fitted.messages,{signal:controller.signal,adaptInstruction:gameMode,onFinish:reason=>{finishReason=reason;},preset:{...state.presets?.find(p=>p.id===(chat.presetId||state.activePresetId)),maxTokens:fitted.maxTokens}}))appendDelta(joiner?joiner.push(chunk):chunk);
+          for await(const chunk of streamCompletion(connection,getSecret(connection.id),fitted.messages,{signal:controller.signal,adaptInstruction:gameMode,disableThinking:gameMode,stop:gameMode?narrationStops(roomData().tactical.round):undefined,onTimings:timings=>{lastTimings=timings;},onFinish:reason=>{finishReason=reason;},preset:{...state.presets?.find(p=>p.id===(chat.presetId||state.activePresetId)),maxTokens:fitted.maxTokens}}))appendDelta(joiner?joiner.push(chunk):chunk);
         }finally{appendDelta(joiner?.flush());}
         if(text.length===before)throw new Error('Модель не дописала ответ. Полученный текст сохранён; попробуйте дописать ещё раз или отредактируйте его вручную.');
         if(finishReason!=='length')break;
@@ -440,7 +444,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         const warning='Ответ достиг лимита длины. Полученный текст сохранён; нажмите «Дописать ответ ведущего».';
         const message=updateMessage(true,warning),fresh=getState();fresh.multiplayer.gmError=warning;persist(fresh);return {message,incomplete:true,reason:'length'};
       }
-      const message=finalize();
+      const message=finalize(),measured=getState();measured.multiplayer.contextReport={...measured.multiplayer.contextReport,performance:{totalMs:Math.round(performance.now()-generationStarted),firstTokenMs:firstTokenAt?Math.round(firstTokenAt-generationStarted):null,...(lastTimings?{promptTokens:lastTimings.prompt_n,outputTokens:lastTimings.predicted_n,tokensPerSecond:lastTimings.predicted_per_second,promptMs:lastTimings.prompt_ms,outputMs:lastTimings.predicted_ms}:{})}};persist(measured);
       try {chat.messages=chat.messages.filter(m=>m.id!==id);chat.messages.push(message);const scene=await inferScene(state,chat,getSecret,controller.signal);if(scene){const fresh=getState();if(fresh.multiplayer?.id===roomId){fresh.multiplayer.scene={...fresh.multiplayer.scene,...scene};if(fresh.multiplayer.lastNarration?.messageId===id)fresh.multiplayer.lastNarration.contextHash=narrationContextHash(fresh.multiplayer,id);persist(fresh);}}}catch{}
       return {message,incomplete:false};
     }catch(error){

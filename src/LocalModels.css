@@ -11,6 +11,9 @@
 .local-advanced > summary {cursor:pointer;font-weight:600;padding:8px 0}
 .local-options-grid {margin:16px 0;align-items:start}
 .local-options-grid input,.local-options-grid select {min-width:0;width:100%}
+.local-runtime-core {margin:18px 0;padding:16px;border:1px solid var(--border);border-radius:12px}
+.local-runtime-core h3 {margin-top:0}
+.local-runtime-core summary {cursor:pointer;font-weight:600}
 @media(max-width:640px){.local-performance{align-items:stretch;flex-direction:column}.local-model-info{padding:12px}.local-options-grid{grid-template-columns:minmax(0,1fr)}}
 
 .local-runtime-active,.local-runtime-notice{padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-size:.9em;line-height:1.6}

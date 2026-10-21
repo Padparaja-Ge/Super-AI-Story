@@ -18,6 +18,13 @@ const persona={id:'srp',name:'Рей',avatar:'R',kind:'srp',className:'Воин'
 test('Narration removes malformed service round headings without removing story text or dialogue',async()=>{
  const {cleanNarration}=await import('../server/room-narration.mjs');assert.equal(cleanNarration('*Раунд 3 · Рассказчик**\nСтраж открыл дверь.'),'Страж открыл дверь.');assert.equal(cleanNarration('**Раунд 12 · Ведущий**\r\nГерои услышали шум.'),'Герои услышали шум.');assert.equal(cleanNarration('— Раунд 3 · Рассказчик, — прочёл он.'),'— Раунд 3 · Рассказчик, — прочёл он.');
 });
+test('Narration removes standalone round completion banners, preserving dialogue and prose',async()=>{
+ const {cleanNarration,narrationStops}=await import('../server/room-narration.mjs');
+ assert.equal(cleanNarration('Страж открывает дверь.\n\n**Раунд 2 завершён.**'),'Страж открывает дверь.');
+ assert.equal(cleanNarration('Конец раунда\nСтраж ждёт у двери.'),'Страж ждёт у двери.');
+ assert.equal(cleanNarration('— Раунд завершён, — сказал судья.'),'— Раунд завершён, — сказал судья.');
+ assert.ok(narrationStops(2).includes('\nРаунд 2 заверш'));
+});
 async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-narration-')),calls=[];
   const provider=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw);calls.push(body);
@@ -36,6 +43,24 @@ async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
   t.after(async()=>{await room.stop();await new Promise(r=>{provider.close(r);provider.closeAllConnections();});await fs.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
   return {get state(){return state;},save:s=>state=structuredClone(s),get room(){return room;},calls,async reopen(){await room.stop();room=createMultiplayer(opts);await room.start({port:0,personaId:persona.id});}};
 }
+test('D&D prompts use persona names, keep all requests once and sanitize old nickname summaries and regeneration',async t=>{
+ const f=await fixture(t,()=>({text:'Страж указывает на дорогу.',reason:'stop'})),s=f.state;
+ s.settings.userName='Морвен';s.personas.find(p=>p.id===persona.id).name='Бог';s.multiplayer.tactical.actors[0].name='Бог';
+ s.multiplayer.personas.host={...persona,name:'Бог'};s.multiplayer.summary='Морвен нашёл ключ от ворот.';
+ s.multiplayer.messages=[{id:'first',role:'user',userId:'host',name:'Морвен',personaName:'Бог',content:'Где хранится единственная печать 7139?',createdAt:new Date().toISOString()}];f.save(s);await f.reopen();
+ assert.equal(f.room.status().participants[0].name,'Морвен','Account name remains available in the lobby');
+ const first=await f.room.generate();const prompt=JSON.stringify(f.calls.at(-1).messages);
+ assert.doesNotMatch(prompt,/Морвен/);assert.match(prompt,/Бог/);assert.equal(prompt.split('Где хранится единственная печать 7139?').length-1,1);
+ assert.match(prompt,/Бог нашёл ключ/);assert.ok(f.calls.at(-1).stop.includes('\nРаунд 1 заверш'));
+ assert.ok(f.state.multiplayer.contextReport.performance.totalMs>=0);
+ await f.room.generate({regenerateMessageId:first.message.id});assert.doesNotMatch(JSON.stringify(f.calls.at(-1).messages),/Морвен/);
+});
+test('Unique actions in a long post survive deduplication when the model context can hold the post',async t=>{
+ const f=await fixture(t,()=>({text:'Страж отвечает на вопросы.',reason:'stop'})),s=f.state;
+ const actions=Array.from({length:60},(_,i)=>`Проверяю отдельную нишу ${i} и спрашиваю о печати КОД${i}.`);
+ s.multiplayer.messages[0].content=actions.join(' ');f.save(s);await f.room.generate();
+ const prompt=JSON.stringify(f.calls.at(-1).messages);for(const action of actions)assert.equal(prompt.split(action).length-1,1,action);
+});
 
 test('Custom NRI NPC spends two configured slow actions, and a finished narration does not replay them',async t=>{
  const f=await fixture(t,()=>({text:'Страж дважды атаковал; результат рассчитан движком.',reason:'stop'}),{mode:'custom',npc:true,npcDecision:({actor})=>({x:actor.x,y:actor.y,action:'skill',targetId:'host',skillId:'unarmed'})});

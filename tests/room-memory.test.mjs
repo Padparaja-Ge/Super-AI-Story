@@ -13,6 +13,25 @@ import {generateMap,mapPNG} from '../server/battlemap.mjs';
 import {installBattlemapAssets} from '../server/battlemap-assets.mjs';
 import {createEmbeddings} from '../server/embeddings.mjs';
 import {modelMessages} from '../server/llm.mjs';
+import {validMemory} from '../server/memory.mjs';
+
+test('Game name migration preserves source coverage and summary validity; RP and the stored room remain unchanged',()=>{
+ const message={id:'old',role:'user',userId:'host',name:'Морвен',personaName:'Бог',content:'Я нашёл ключ 7139.'};
+ const old=`Морвен (Бог): ${message.content}`,hash=crypto.createHash('sha256').update('user\n'+old).digest('hex');
+ const room={id:'ours',mode:'dnd',personas:{host:{name:'Бог'}},messages:[message],summary:'Морвен нашёл ключ.',memory:[{id:'memory',enabled:true,content:'Морвен нашёл ключ 7139.',sources:[{id:'old',hash,start:0,end:old.length}]}]};
+ const before=structuredClone(room),chat=roomChat(room);
+ assert.equal(chat.messages[0].name,'Бог');assert.equal(chat.messages[0].content,'Бог: '+message.content);
+ assert.equal(validMemory(chat).length,1);assert.equal(chat.memory[0].sources[0].end,chat.messages[0].content.length);
+ assert.doesNotMatch(JSON.stringify(chat),/Морвен/);assert.deepEqual(room,before);
+ const rp=roomChat({...room,mode:'roleplay'});assert.match(rp.messages[0].content,/Морвен \(Бог\)/);assert.equal(rp.summary,room.summary);
+});
+test('Legacy assistant memory keeps exact source offsets when multiple account aliases become persona names',()=>{
+ const content='Морвен получил ключ. Морвен вернул печать.',hash=crypto.createHash('sha256').update('assistant\n'+content).digest('hex'),start=content.indexOf('вернул');
+ const room={id:'old-room',mode:'custom',personas:{host:{name:'Бог'}},messages:[{id:'identity',role:'user',userId:'host',name:'Морвен',personaName:'Бог',content:'Возвращаюсь.'},{id:'event',role:'assistant',content}],memory:[{id:'past',content:'Морвен вернул печать.',sources:[{id:'event',hash,start,end:content.length}]}]};
+ const chat=roomChat(room),block=validMemory(chat)[0];assert.ok(block);
+ const source=block.sources[0];assert.equal(chat.messages.find(m=>m.id==='event').content.slice(source.start,source.end),'вернул печать.');
+ assert.equal(block.content,'Бог вернул печать.');
+});
 
 const seed=JSON.parse(await fs.readFile(new URL('../shared/seed.json',import.meta.url),'utf8'));
 function fixture(options={}){

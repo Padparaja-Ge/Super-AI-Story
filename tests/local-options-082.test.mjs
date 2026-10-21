@@ -7,6 +7,25 @@ import {readGguf} from '../server/gguf.mjs';
 import {moeRecommendation,resolveRuntimeOptions} from '../server/moe.mjs';
 import {runtimeArgs} from '../server/local-runtime.mjs';
 import {startServer} from '../server/index.mjs';
+import {normalizeOptions,samplingBody,samplingFields} from '../shared/local-options.mjs';
+import {applyModelProfile,modelProfiles} from '../shared/model-profiles.mjs';
+
+test('Context Shift, SWA cache, MMAP, Flash Attention, quantized KV and advanced samplers reach the embedded runtime',()=>{
+ const options={loadMode:'mmap',contextShift:'on',swaCache:'full',flashAttention:'on',cacheTypeK:'q8_0',cacheTypeV:'q8_0'};
+ const args=runtimeArgs({...input,options});
+ for(const [flag,value] of [['--load-mode','mmap'],['--flash-attn','on'],['--cache-type-k','q8_0'],['--cache-type-v','q8_0']])assert.equal(args[args.indexOf(flag)+1],value);
+ assert.ok(args.includes('--context-shift'));assert.ok(args.includes('--swa-full'));
+ const defaults=runtimeArgs(input);assert.ok(defaults.includes('--no-context-shift'));assert.ok(!defaults.includes('--swa-full'));
+ const body=samplingBody({topNSigma:1.5,adaptiveTarget:.2,adaptiveDecay:.85});assert.equal(body.top_n_sigma,1.5);assert.equal(body.adaptive_target,.2);assert.equal(body.adaptive_decay,.85);
+ assert.equal(samplingBody().adaptive_target,-1);assert.equal(samplingBody().top_n_sigma,-1);
+ assert.throws(()=>normalizeOptions({contextShift:'invalid'}));assert.throws(()=>normalizeOptions({adaptiveTarget:1.2},samplingFields));
+});
+test('The optional SAINEMO Q8 profile reduces KV memory without changing unrelated settings',()=>{
+ const settings={localDevice:'cpu',localEmbeddings:true,embeddingModelPath:'keep.gguf',localRuntime:{threads:6},localSampling:{adaptiveTarget:.2}};
+ const before=structuredClone(settings),profile=modelProfiles.find(p=>p.match.test('SAINEMO-reMIX.Q6_K.gguf')),applied=applyModelProfile(settings,profile.id);
+ assert.equal(profile.id,'sainemo-q8-kv');assert.equal(applied.localRuntime.cacheTypeK,'q8_0');assert.equal(applied.localRuntime.cacheTypeV,'q8_0');assert.equal(applied.localRuntime.flashAttention,'on');assert.equal(applied.localRuntime.threads,6);
+ assert.equal(applied.localDevice,'cpu');assert.equal(applied.localEmbeddings,true);assert.equal(applied.embeddingModelPath,'keep.gguf');assert.deepEqual(settings,before);
+});
 
 const info={isMoe:true,architecture:'llama',experts:8,activeExperts:2,size:13*1024**3,expertBytes:12*1024**3,nonExpertBytes:1024**3,layers:32,kvHeads:8,keyLength:128,valueLength:128,splitCount:1};
 const device={backend:'cuda',freeMiB:8000,device:'CUDA0'};
@@ -72,8 +91,11 @@ test('State API queues advanced launch flags while a model is running, but keeps
  const base='http://127.0.0.1:'+runtime.port;
  const state=await (await fetch(base+'/api/state')).json();
  state.settings.localRuntime.cpuMoeLayers=7;state.settings.localRuntime.expertUsedCount=2;state.settings.moeAuto=false;
+ state.settings.localRuntime.contextShift='on';state.settings.localRuntime.swaCache='full';state.settings.localRuntime.cacheTypeK='q8_0';
+ state.settings.localSampling.topNSigma=1.5;state.settings.localSampling.adaptiveTarget=.2;state.settings.localSampling.adaptiveDecay=.85;
  const put=body=>fetch(base+'/api/state',{method:'PUT',headers:{'Content-Type':'application/json','X-SAS-Client':'test'},body:JSON.stringify(body)});
  const accepted=await put(state);assert.equal(accepted.status,200);const saved=await accepted.json();assert.equal(saved.settings.localRuntime.cpuMoeLayers,7);assert.equal(saved.settings.localRuntime.expertUsedCount,2);assert.equal(saved.settings.moeAuto,false);
+ assert.equal(saved.settings.localRuntime.contextShift,'on');assert.equal(saved.settings.localRuntime.swaCache,'full');assert.equal(saved.settings.localRuntime.cacheTypeK,'q8_0');assert.equal(saved.settings.localSampling.topNSigma,1.5);assert.equal(saved.settings.localSampling.adaptiveTarget,.2);
  const denied=structuredClone(saved);denied.settings.localEmbeddings=!denied.settings.localEmbeddings;assert.equal((await put(denied)).status,409);
  let release;const task=runtime.app.locals.runtime.tasks.run({kind:'test',stage:'test'},signal=>new Promise(resolve=>{release=resolve;signal.addEventListener('abort',resolve,{once:true});}));
  const during=structuredClone(saved);during.settings.localRuntime.cpuMoeLayers=8;assert.equal((await put(during)).status,409);release();await task.promise;

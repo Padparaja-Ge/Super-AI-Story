@@ -7,9 +7,10 @@ const hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).dige
 const canonicalActor=({online,avatar,...actor})=>actor;
 const canonicalPersona=({avatar,...persona})=>persona;
 const canonicalMap=map=>{if(!map)return map;const {imageId,...geometry}=map;return geometry;};
-export const narrationFormatInstruction='Выдавай только художественное повествование и реплики NPC. Не печатай служебные заголовки «Раунд N · Рассказчик», имена ролей, этапы генерации или таблицы расчётов: они уже показаны интерфейсом.';
+export const narrationFormatInstruction='Выдавай только художественное повествование и реплики NPC. Используй имена игровых персонажей. Не печатай служебные заголовки «Раунд N · Рассказчик», объявления «Раунд завершён», «Конец раунда», имена ролей, этапы генерации или таблицы расчётов: они уже показаны интерфейсом. Начинай сразу с событий сцены и заканчивай репликой NPC или художественным описанием.';
+export const narrationStops=round=>['\nКонец раунда','\n**Конец раунда',...['','*','**'].flatMap(mark=>[`\n${mark}Раунд ${round} заверш`,`\n${mark}Раунд ${round} окончен`])];
 export function cleanNarration(text){
- return String(text).replace(/^[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*Раунд[ \t]+\d+[ \t]*[·:—–-][ \t]*(?:Рассказчик|Ведущий|AI[ -]?(?:Game Master|ведущий)|GM)[ \t]*[*_`]*[ \t]*:?[ \t]*(?:\r?\n|$)/gimu,'').trim();
+ return String(text).replace(/^[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*Раунд[ \t]+\d+[ \t]*[·:—–-][ \t]*(?:Рассказчик|Ведущий|AI[ -]?(?:Game Master|ведущий)|GM)[ \t]*[*_`]*[ \t]*:?[ \t]*(?:\r?\n|$)/gimu,'').replace(/^[ \t]*(?:#{1,6}[ \t]*)?[*_`]*[ \t]*(?:Раунд[ \t]+\d+[ \t]+(?:заверш[её]н|окончен)|Конец[ \t]+раунда)(?:[.!:]?[*_`]*[ \t]*)?(?:\r?\n|$)/gimu,'').trim();
 }
 export function publicRegeneration(room,state){
  const record=room.lastNarration,last=room.messages?.filter(m=>m.kind!=='image').at(-1);

@@ -37,6 +37,8 @@ export function runtimeArgs({modelPath,context,gpuLayers,device,port,key,embeddi
   args.push(s.opOffload==='on'?'--op-offload':'--no-op-offload',s.cachePrompt==='on'?'--cache-prompt':'--no-cache-prompt');
   if(s.kvOffload==='off')args.push('--no-kv-offload');
   if(s.cacheReuse)args.push('--cache-reuse',String(s.cacheReuse));
+  args.push(s.contextShift==='on'?'--context-shift':'--no-context-shift');
+  if(s.swaCache==='full')args.push('--swa-full');
   if(s.numa!=='disabled')args.push('--numa',s.numa);
   if(s.expertUsedCount){if(!modelInfo?.isMoe||s.expertUsedCount>modelInfo.experts)throw new Error('Число активных экспертов превышает число экспертов модели или модель не является MoE.');args.push('--override-kv',modelInfo.architecture+'.expert_used_count=int:'+s.expertUsedCount);}
   return args;

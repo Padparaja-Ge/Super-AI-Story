@@ -105,6 +105,7 @@ export async function* streamCompletion(connection, secret, messages, options = 
     if (!response.body) throw new Error('API вернул пустой поток.');
     if (response.headers.get('content-type')?.includes('application/json')) {
       const data = await response.json();
+      if(data.timings)options.onTimings?.(data.timings);
       if (data.error) throw new Error(data.error.message || String(data.error));
       const content = data.choices?.[0]?.message?.content;
       if (data.choices?.[0]?.finish_reason) options.onFinish?.(data.choices[0].finish_reason);
@@ -121,6 +122,7 @@ export async function* streamCompletion(connection, secret, messages, options = 
       let parsed;
       try { parsed = JSON.parse(data); } catch { throw new Error('API прислал некорректный JSON в потоке SSE.'); }
       if (parsed.error) throw new Error(parsed.error.message || String(parsed.error));
+      if(parsed.timings)options.onTimings?.(parsed.timings);
       if (parsed.choices?.[0]?.finish_reason) { finished=true; options.onFinish?.(parsed.choices[0].finish_reason); }
       const content = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.text;
       return { text: typeof content === 'string' ? content : '' };
