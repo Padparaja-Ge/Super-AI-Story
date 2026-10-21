@@ -26,6 +26,14 @@ jobs:
           $temporaryPath = node -e "process.stdout.write(require('node:fs').realpathSync.native(require('node:os').tmpdir()))"
           "TEMP=$temporaryPath" >> $env:GITHUB_ENV
           "TMP=$temporaryPath" >> $env:GITHUB_ENV
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        id: python
+        with:
+          python-version: '3.12'
+      - name: Prepare speech worker tests
+        run: python -m pip install --disable-pip-version-check numpy==2.2.6
       - run: npm ci
       - run: npm test
+        env:
+          SAS_TTS_PYTHON: ${{ steps.python.outputs.python-path }}
       - run: npm run build
