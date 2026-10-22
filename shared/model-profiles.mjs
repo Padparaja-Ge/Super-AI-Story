@@ -1,5 +1,6 @@
 import {runtimeDefaults,samplingDefaults} from './local-options.mjs';
 export const modelProfiles=[
+ {id:'luchador-gemma4',name:'rpDungeon Gemma 4 E4B Luchador · Q8_0',match:/rpDungeon[_-]Gemma-4-E4B-Luchador.*Q8_0/i,contextSize:8192,moeAuto:false,runtime:{chatTemplate:'gguf',cacheTypeK:'q8_0',cacheTypeV:'f16',fitTarget:1024},sampling:{temperature:.8,maxTokens:1024,topK:40,topP:.95,minP:.05,repeatPenalty:1},note:'Проверен с Toneriko на RTX 4070. Штатный шаблон Gemma из GGUF; Llama 3 для этого файла не подходит. Для меньшей VRAM используйте автоматическое размещение. Контекст 8192 — начальная настройка, не предел модели.'},
  {id:'sainemo-q8-kv',name:'SAINEMO-reMIX · Q6_K · Q8 KV-кэш',match:/SAINEMO-reMIX.*Q6_K/i,contextSize:8192,moeAuto:false,runtime:{flashAttention:'on',cacheTypeK:'q8_0',cacheTypeV:'q8_0',fitTarget:1536},sampling:{temperature:.65,maxTokens:800,topK:40,topP:.95,minP:.05,repeatPenalty:1.05},note:'Вариант с меньшим расходом видеопамяти: Flash Attention и Q8 KV-кэш. Проверен на SAINEMO Q6_K / RTX 4070, контекст 8192. Применяйте при нехватке VRAM; параметры доступны для ручной правки.'},
  {id:'sainemo-dense',name:'SAINEMO-reMIX · Dense Q6_K',match:/SAINEMO-reMIX.*Q6_K/i,contextSize:8192,moeAuto:false,sampling:{temperature:.65,maxTokens:800,topK:40,topP:.95,minP:.05,repeatPenalty:1.05},note:'Исходная точка по прогону SAINEMO Q6_K на RTX 4070: RP, D&D и Story books. Скорость и объём контекста зависят от вашего устройства.'},
  {id:'multiverse-moe',name:'M-MOE-4X7B Dark MultiVerse · 24B',match:/M-MOE-4X7B.*(?:Dark|MultiVerse)/i,contextSize:8192,moeAuto:true,sampling:{temperature:.55,maxTokens:800,topK:40,topP:.9,minP:.05,repeatPenalty:1.05},note:'Рекомендуемые начальные настройки для ранее проверявшегося MoE. Размещение экспертов подбирается по вашей VRAM; число активных экспертов берётся из GGUF.'},
@@ -7,5 +8,5 @@ export const modelProfiles=[
 ];
 export function applyModelProfile(settings,id){
  const p=modelProfiles.find(p=>p.id===id);if(!p)throw Error('Неизвестный профиль модели.');
- return {...settings,contextSize:p.contextSize,gpuLayers:'auto',moeAuto:p.moeAuto,localRuntime:{...runtimeDefaults,...settings.localRuntime,chatTemplate:'gguf',expertUsedCount:0,cpuMoeLayers:0,cpuFfnLayers:0,ropeScaling:'model',ropeScale:0,...p.runtime},localSampling:{...samplingDefaults,...settings.localSampling,...p.sampling}};
+ return {...settings,contextSize:p.contextSize,gpuLayers:'auto',moeAuto:p.moeAuto,localRuntime:{...runtimeDefaults,...settings.localRuntime,chatTemplate:'gguf',expertUsedCount:0,cpuMoeLayers:0,cpuFfnLayers:0,ropeScaling:'model',ropeScale:0,...p.runtime},localSampling:{...samplingDefaults,...p.sampling}};
 }

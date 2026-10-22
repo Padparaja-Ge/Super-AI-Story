@@ -79,6 +79,13 @@ test('Image prompt refuses repeated roleplay prose rather than forwarding it to 
   const f=await model(t,['She smiles at you and says hello.']);await assert.rejects(makeSceneImagePrompt(f.state,f.chat,()=>'',undefined),/визуальных тегов/);assert.equal(f.calls.length,2);
   assert.throws(()=>visualTags('I look at you. Then I speak.'),/визуальных тегов/);
 });
+
+test('Valid possessive visual phrases from local models do not trigger format failures',async t=>{
+ const tags={...tagObject,pose:['standing beside a wooden table','tail wrapped around her leg'],clothing:['her navy blazer','his dark coat','their worn boots']};
+ const f=await model(t,[JSON.stringify(tags)]);const prompt=await makeSceneImagePrompt(f.state,f.chat,()=>'',undefined);
+ assert.match(prompt,/tail wrapped around leg/);assert.match(prompt,/navy blazer/);assert.equal(f.calls.length,1);
+ assert.doesNotMatch(prompt,/\b(?:her|his|their)\s/);assert.throws(()=>visualTags('She smiles at you and writes her name. Then she leaves.'),/визуальных тегов/);
+});
 const workflow={
   '1':{class_type:'CheckpointLoaderSimple',inputs:{ckpt_name:'original.safetensors'}},
   '2':{class_type:'LoraLoader',inputs:{model:['1',0],clip:['1',1],lora_name:'character.safetensors',strength_model:.7,strength_clip:.8}},

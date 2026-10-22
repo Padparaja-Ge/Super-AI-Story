@@ -1,4 +1,6 @@
 import {samplingBody} from '../shared/local-options.mjs';
+import {createAssistantOutputFilter} from './assistant-output.mjs';
+import {repeatedReply} from './roleplay.mjs';
 export function getConnection(state, chat) {
   const connection = state.connections.find(item => item.id === (chat?.connectionId || state.activeConnectionId));
   if (!connection) throw new Error('Подключение не найдено. Добавьте его в настройках моделей.');
@@ -58,7 +60,8 @@ export async function countCompletionTokens(connection,secret,messages,options={
   };
   try{
     const adapted=options.adaptInstruction?modelMessages(connection,messages):messages;
-    const template=await post('/apply-template',{messages:adapted,add_generation_prompt:true,...(options.disableThinking?{chat_template_kwargs:{enable_thinking:false},reasoning_effort:'none'}:{})});
+    const disableThinking=options.disableThinking??options.adaptInstruction;
+    const template=await post('/apply-template',{messages:adapted,add_generation_prompt:true,...(disableThinking?{chat_template_kwargs:{enable_thinking:false},reasoning_effort:'none'}:{})});
     if(typeof template?.prompt!=='string')return null;
     const result=await post('/tokenize',{content:template.prompt,add_special:true});
     return Array.isArray(result?.tokens)?result.tokens.length:null;
@@ -94,11 +97,21 @@ export async function* streamCompletion(connection, secret, messages, options = 
   if(options.responseFormat)body.response_format=options.responseFormat;
   if(options.stop?.length)body.stop=options.stop;
   if(options.adaptInstruction&&connection.id==='sas-local'&&connection.promptFormat==='alpaca')body.stop=[...new Set([...(body.stop||[]),'### Instruction:','### Response:','### System:'])];
-  if(options.disableThinking&&connection.id==='sas-local'){body.chat_template_kwargs={enable_thinking:false};body.reasoning_effort='none';}
+  if((options.disableThinking??options.adaptInstruction)&&connection.id==='sas-local'){body.chat_template_kwargs={enable_thinking:false};body.reasoning_effort='none';}
   if (preset.topP != null) body.top_p = Number(preset.topP);
   const timeoutSignal = AbortSignal.timeout(600000);
   const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
   let response;
+  const filter=createAssistantOutputFilter();
+  let visible='';
+  const accept=(text,flush=false)=>{
+    const value=flush?filter.flush():filter.push(String(text));
+    if(value&&(connection.id==='sas-local'||options.guardRepetition)&&!options.responseFormat){
+      visible=(visible+value).slice(-16000);
+      if(repeatedReply(visible))throw Object.assign(new Error('Модель зациклилась на повторяющемся тексте. Полученный черновик сохранён; перегенерируйте ответ или измените параметры модели.'),{code:'RESPONSE_REPETITION'});
+    }
+    return value;
+  };
   try {
     response = await fetch(endpoint(connection, 'chat/completions'), { method: 'POST', headers: headers(secret), body: JSON.stringify(body), signal });
     if (!response.ok) throw await responseError(response);
@@ -109,7 +122,8 @@ export async function* streamCompletion(connection, secret, messages, options = 
       if (data.error) throw new Error(data.error.message || String(data.error));
       const content = data.choices?.[0]?.message?.content;
       if (data.choices?.[0]?.finish_reason) options.onFinish?.(data.choices[0].finish_reason);
-      if (content) yield String(content);
+      if (content) {const text=accept(content);if(text)yield text;}
+      const rest=accept('',true);if(rest)yield rest;
       return;
     }
     const decoder = new TextDecoder();
@@ -137,14 +151,15 @@ export async function* streamCompletion(connection, secret, messages, options = 
         if (line) eventLines.push(line);
         else {
           const event = parse(eventLines); eventLines = [];
-          if (event.done) return;
-          if (event.text) yield event.text;
+          if (event.done) {const rest=accept('',true);if(rest)yield rest;return;}
+          if (event.text) {const text=accept(event.text);if(text)yield text;}
         }
       }
     }
     buffer += decoder.decode();
     if (buffer) eventLines.push(buffer.replace(/\r$/, ''));
-    if (eventLines.length) { const event = parse(eventLines); if (event.text) yield event.text; }
+    if (eventLines.length) { const event = parse(eventLines); if (event.text) {const text=accept(event.text);if(text)yield text;} }
+    const rest=accept('',true);if(rest)yield rest;
     if(!finished)throw Object.assign(new Error('Поток ответа прервался до подтверждения окончания. Полученный текст сохранён; повторите или продолжите генерацию.'),{code:'STREAM_INCOMPLETE'});
   } catch (error) { throw networkError(error); }
   finally { if (response?.body && !response.body.locked) await response.body.cancel().catch(() => {}); }

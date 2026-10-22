@@ -9,7 +9,7 @@ export function macros(text, character, settings) {
 
 export function selectLore(state, chat, content = '', options = {}) {
   const scanDepth = number(chat.memorySettings?.scanDepth ?? state.settings?.scanDepth, 6, 1, 100);
-  const scan = [...chat.messages.slice(-scanDepth).map(message => message.content), content].join('\n');
+  const scan = [...chat.messages.filter(m=>m.interruptionReason!=='repetition').slice(-scanDepth).map(message => message.content), content].join('\n');
   const budget = number(chat.memorySettings?.loreBudget ?? state.settings?.loreBudget, 1600, 0, 100000);
   const character = state.characters.find(item => item.id === chat.characterId);
   const bookIds = Array.isArray(chat.lorebookIds) ? chat.lorebookIds : character?.lorebookIds || [];
@@ -105,7 +105,7 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   }
   const prefix = [...presetMessages.map(message => ({ ...message, content: expand(message.content) })), { role: 'system', content: expand(baseSections.filter(Boolean).join('\n\n')) }].filter(message => message.content.trim());
   const historyLimit = number(settings.historyLimit, 30, 0, 500);
-  const history = (options.historyMessages ?? (historyLimit ? chat.messages.slice(-historyLimit) : [])).filter(message => ['user', 'assistant'].includes(message.role) && message.content).map(message => ({ role: message.role, content: expand(message.content) }));
+  const history = (options.historyMessages ?? (historyLimit ? chat.messages.slice(-historyLimit) : [])).filter(message => ['user', 'assistant'].includes(message.role) && message.content && message.interruptionReason!=='repetition').map(message => ({ role: message.role, content: expand(message.content) }));
   const tail = [];
   if(options.tailInstructions)tail.push({role:'system',content:options.tailInstructions});
   if(options.sourceExcerpts?.length)tail.push({role:'system',content:'Исходные события ЭТОЙ истории (архив, не новые действия):\n'+options.sourceExcerpts.map(s=>`[Сообщение ${s.index+1}] ${s.text}`).join('\n\n')+'\nИспользуй эти подтверждённые факты для ответа. Если сводка противоречит исходному событию, верь исходному событию. Если ответа нет, не выдумывай его.'});

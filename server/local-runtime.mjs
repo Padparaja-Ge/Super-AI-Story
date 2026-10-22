@@ -9,6 +9,7 @@ import {bundleExecutable,installBundle,execute} from './llama-bundle.mjs';
 import {normalizeOptions} from '../shared/local-options.mjs';
 import {readGguf} from './gguf.mjs';
 import {resolveRuntimeOptions} from './moe.mjs';
+import {chatTemplateProblem} from '../shared/chat-template.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 export function parseDevices(text,backend){
@@ -28,6 +29,7 @@ export function runtimeArgs({modelPath,context,gpuLayers,device,port,key,embeddi
   // Encoder attention requires the whole sequence in one physical batch.
   if(embedding)return [...args,'--embedding','--batch-size',String(context),'--ubatch-size',String(context)];
   const s=normalizeOptions(options);if(s.ubatchSize>s.batchSize)throw new Error('Физическая пачка не может быть больше логической.');
+  const templateProblem=chatTemplateProblem(modelInfo,s.chatTemplate);if(templateProblem)throw new Error(templateProblem);
   if(Number.isInteger(modelInfo?.layers)&&modelInfo.layers>0&&[s.cpuMoeLayers,s.cpuFfnLayers].some(n=>n>modelInfo.layers))throw new Error('Число слоёв в RAM не может превышать число слоёв выбранной модели.');
   for(const [key,flag] of Object.entries({threads:'--threads',threadsBatch:'--threads-batch',batchSize:'--batch-size',ubatchSize:'--ubatch-size',flashAttention:'--flash-attn',cacheTypeK:'--cache-type-k',cacheTypeV:'--cache-type-v',loadMode:'--load-mode',fit:'--fit',fitTarget:'--fit-target',cpuMoeLayers:'--n-cpu-moe',cpuFfnLayers:'--n-cpu-ffn'}))if(!['threads','threadsBatch','cpuMoeLayers','cpuFfnLayers'].includes(key)||s[key]>0)args.push(flag,String(s[key]));
   if(s.chatTemplate!=='gguf')args.push('--chat-template',s.chatTemplate);

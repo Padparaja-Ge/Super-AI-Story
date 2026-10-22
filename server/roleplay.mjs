@@ -32,11 +32,20 @@ export function roleplaySampling(connection,settings){
 // A bounded guard for instruction templates which may repeat despite samplers.
 // It examines only generated text; player posts and stored archives are untouched.
 export function repeatedReply(text){
+ text=String(text||'').slice(-16000);
  if(text.length<240)return false;
  const counts=new Map();
  for(const {segment} of new Intl.Segmenter('ru',{granularity:'sentence'}).segment(text)){
   const key=segment.trim().replace(/\s+/gu,' ');if(key.length<40)continue;
   const count=(counts.get(key)||0)+1;counts.set(key,count);if(count>=4)return true;
  }
- return /(.{60,250}?)(?:\s*\1){3}/su.test(text.slice(-1800));
+ if(/(.{60,250}?)(?:\s*\1){3}/su.test(text.slice(-1800)))return true;
+ // Degenerate model-name lists have no sentence punctuation and their period
+ // is longer than the paragraph guard. Compare bounded complete line cycles.
+ const lines=text.slice(-12000).split(/\r?\n/u).slice(0,-1).map(s=>s.trim()).filter(Boolean).slice(-240);
+ for(let width=6;width<=Math.min(80,Math.floor(lines.length/3));width++){
+  const block=lines.slice(-width);if(new Set(block).size<6||block.join('\n').length<100)continue;
+  if(block.every((line,i)=>line===lines[lines.length-width*2+i]&&line===lines[lines.length-width*3+i]))return true;
+ }
+ return false;
 }

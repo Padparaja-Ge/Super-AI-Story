@@ -514,7 +514,7 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
             const before = generation.partial.length;
             let finishReason;const continuationJoiner=continuing?createTextContinuationJoiner(generation.partial):null;
             try {
-            for await (const chunk of stream(connection, getSecret(connection.id), prepared.messages, { signal, stop:fanficStops, disableThinking: true,adaptInstruction:true, onFinish: reason => { finishReason = reason; }, preset: { maxTokens: prepared.maxTokens, temperature:editing?rewriteProfile.temperature:writingProfile.temperature } })) {
+            for await (const chunk of stream(connection, getSecret(connection.id), prepared.messages, { signal, stop:fanficStops, disableThinking: true,adaptInstruction:true,guardRepetition:true, onFinish: reason => { finishReason = reason; }, preset: { maxTokens: prepared.maxTokens, temperature:editing?rewriteProfile.temperature:writingProfile.temperature } })) {
               signal.throwIfAborted();
               // Continuation may begin with a suffix of an unfinished word.
               // Never insert a speculative space between letters.

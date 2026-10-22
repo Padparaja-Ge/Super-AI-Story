@@ -42,3 +42,24 @@ test('External providers do not receive optional llama tokenizer calls; unavaila
  assert.equal(await countCompletionTokens({id:'openrouter',baseUrl:'https://api.example/v1'},'',[],{fetcher}),null);assert.equal(called,0);
  assert.equal(await countCompletionTokens({id:'sas-local',baseUrl:'http://127.0.0.1:9011/v1'},'',[],{fetcher}),null);assert.equal(called,1);
 });
+
+test('Local streamed reasoning is removed before rendering; explicit final prose is preserved',async t=>{
+ const connection={...await fixture(t,delta('<thi')+delta('nk>private analysis</th')+delta('ink>Новый ответ.')+'data: [DONE]'),id:'sas-local'};
+ let text='';for await(const chunk of streamCompletion(connection,'',[{role:'user',content:'Reply'}],{adaptInstruction:true}))text+=chunk;
+ assert.equal(text,'Новый ответ.');
+});
+test('Local repetition guard also protects non-Alpaca stories, while external APIs remain unchanged',async t=>{
+ const block='Повторяющаяся фраза: страж стоит у двери и ждёт следующего вопроса. ';
+ const connection=await fixture(t,Array.from({length:8},()=>delta(block)).join('')+'data: [DONE]');let text='';
+ await assert.rejects(async()=>{for await(const chunk of streamCompletion({...connection,id:'sas-local',promptFormat:'single-system'},'',[],{}))text+=chunk;},e=>e.code==='RESPONSE_REPETITION');
+ assert.ok(text.length>0&&text.length<block.length*8);
+ let external='';for await(const chunk of streamCompletion(connection,'',[],{}))external+=chunk;
+ assert.equal(external,block.repeat(8));
+ await assert.rejects(async()=>{for await(const _chunk of streamCompletion(connection,'',[],{guardRepetition:true})){};},e=>e.code==='RESPONSE_REPETITION');
+});
+
+test('External providers returning reasoning inside content cannot expose it in the visible answer',async t=>{
+ const connection=await fixture(t,delta('<think>private provider scratchpad</think>Visible answer.')+'data: [DONE]');let text='';
+ for await(const chunk of streamCompletion(connection,'',[],{}))text+=chunk;
+ assert.equal(text,'Visible answer.');
+});

@@ -33,13 +33,13 @@ async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
     res.writeHead(200,{'Content-Type':'text/event-stream'});res.end('data: '+JSON.stringify(event)+'\n\n'+(next.eof?'':'data: [DONE]\n\n'));
   });await new Promise(r=>provider.listen(0,'127.0.0.1',r));
   let state=sanitizeState(structuredClone(seed));state.personas.push(persona);state.connections[0].baseUrl=`http://127.0.0.1:${provider.address().port}/v1`;state.connections[0].model='mock';state.connections[0].contextWindow=8192;state.connections[0].maxTokens=150;state.activeConnectionId=state.connections[0].id;state.plugins=[];
-  const g=createAdventureGame(mode);g.actors=[adventureActor('host',persona,g.rules)];g.order=['host'];g.phase='gm';
+  const g=mode==='roleplay'?undefined:createAdventureGame(mode);if(g){g.actors=[adventureActor('host',persona,g.rules)];g.order=['host'];g.phase='gm';}
   if(npc){g.actors.push({...adventureActor('npc',{...persona,id:'npc',name:'Страж'},g.rules),player:false,x:1,y:1});g.inCombat=true;g.actors[0].abilities.dexterity=12;g.actors[1].abilities.dexterity=8;}
   state.multiplayer={id:'room-own',name:'Наша игра',mode,connectionId:state.connections[0].id,chatId:seed.chats[0].id,messages:[{id:'player',role:'user',name:'Рей',content:'Входим в таверну.',createdAt:new Date().toISOString()}],memory:[],summary:'',memorySettings:{autoSummary:false,vectorMemory:false},scene:{autoUpdate:false,location:'Площадь'},personas:{},tactical:g};
   const opts={getState:()=>structuredClone(state),saveState:s=>{state=structuredClone(s);},getSecret:()=>'',dataDir:dir,tasks:{busy:()=>true}};
   let room=createMultiplayer(opts);await room.start({port:0,personaId:persona.id});
   // The reopened GM phase must remain unchanged.
-  assert.equal(state.multiplayer.tactical.phase,'gm');
+  if(g)assert.equal(state.multiplayer.tactical.phase,'gm');
   t.after(async()=>{await room.stop();await new Promise(r=>{provider.close(r);provider.closeAllConnections();});await fs.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
   return {get state(){return state;},save:s=>state=structuredClone(s),get room(){return room;},calls,async reopen(){await room.stop();room=createMultiplayer(opts);await room.start({port:0,personaId:persona.id});}};
 }
@@ -54,6 +54,15 @@ test('D&D prompts use persona names, keep all requests once and sanitize old nic
  assert.match(prompt,/Бог нашёл ключ/);assert.ok(f.calls.at(-1).stop.includes('\nРаунд 1 заверш'));
  assert.ok(f.state.multiplayer.contextReport.performance.totalMs>=0);
  await f.room.generate({regenerateMessageId:first.message.id});assert.doesNotMatch(JSON.stringify(f.calls.at(-1).messages),/Морвен/);
+});
+
+test('Multiplayer RP applies the local instruction template and disables thinking just like standalone RP',async t=>{
+ const f=await fixture(t,()=>({text:'Ирис указывает на дверь таверны.',reason:'stop'}),{mode:'roleplay'}),s=f.state;
+ const id=s.connections[0].id;s.connections[0].id='sas-local';s.connections[0].promptFormat='alpaca';s.activeConnectionId='sas-local';s.multiplayer.connectionId='sas-local';
+ for(const chat of s.chats)if(chat.connectionId===id)chat.connectionId='sas-local';f.save(s);
+ await f.room.generate();const request=f.calls.findLast(c=>c.stream===true);
+ assert.ok(request);assert.ok(request.messages.every(m=>m.role!=='system'));assert.equal(request.chat_template_kwargs.enable_thinking,false);
+ assert.ok(request.stop.includes('### Instruction:'));assert.ok(request.messages.some(m=>m.content.includes('Входим в таверну.')));
 });
 test('Unique actions in a long post survive deduplication when the model context can hold the post',async t=>{
  const f=await fixture(t,()=>({text:'Страж отвечает на вопросы.',reason:'stop'})),s=f.state;

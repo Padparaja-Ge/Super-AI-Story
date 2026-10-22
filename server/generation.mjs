@@ -1,4 +1,4 @@
-import {roleplaySampling,focusedRoleplay,repeatedReply} from './roleplay.mjs';
+import {roleplaySampling,repeatedReply} from './roleplay.mjs';
 import crypto from 'node:crypto';
 import { getConnection, streamCompletion } from './llm.mjs';
 import { inferScene } from './language.mjs';
@@ -56,8 +56,8 @@ export function createGeneration({getState,saveState,getSecret,tasks,prepareProm
           job.stage=completing?'Дописать ответ персонажа':'Персонаж пишет';
           const fitted=completing?await fit(connection,getSecret(connection.id),prompt.messages,{text:job.text,maxTokens:prompt.budget.maxTokens,signal,adaptInstruction:true,instruction:chatResumeInstruction,priorityMessages:[{role:'system',content:'Ты играешь только выбранного персонажа. Не управляй игроком. Сохраняй исходные факты этой истории.'}]}):{messages:prompt.messages,maxTokens:prompt.budget.maxTokens};
           const before=job.text.length,joiner=completing?createTextContinuationJoiner(job.text,{capitalBoundary:true}):undefined;finishReason='';
-          const append=chunk=>{if(chunk){job.text+=chunk;if(focusedRoleplay(connection,state.settings)&&repeatedReply(job.text))throw Object.assign(new Error('Модель начала повторять один фрагмент. Черновик сохранён; измените запрос или параметры и нажмите «Перегенерировать».'),{code:'RESPONSE_REPETITION'});if(job.text.length>2000000)throw new Error('Ответ превысил допустимый размер.');}};
-          try{for await(const chunk of stream(connection,getSecret(connection.id),fitted.messages,{signal,adaptInstruction:true,samplingOverrides,onFinish:reason=>{finishReason=reason;},preset:{...preset,maxTokens:fitted.maxTokens}}))append(joiner?joiner.push(chunk):chunk);}
+          const append=chunk=>{if(chunk){job.text+=chunk;if(repeatedReply(job.text))throw Object.assign(new Error('Модель начала повторять один фрагмент. Черновик сохранён; измените запрос или параметры и нажмите «Перегенерировать».'),{code:'RESPONSE_REPETITION'});if(job.text.length>2000000)throw new Error('Ответ превысил допустимый размер.');}};
+          try{for await(const chunk of stream(connection,getSecret(connection.id),fitted.messages,{signal,adaptInstruction:true,guardRepetition:true,samplingOverrides,onFinish:reason=>{finishReason=reason;},preset:{...preset,maxTokens:fitted.maxTokens}}))append(joiner?joiner.push(chunk):chunk);}
           finally{append(joiner?.flush());}
           if(job.text.length===before)throw new Error('Модель не дописала ответ. Черновик сохранён; попробуйте ещё раз.');
           if(finishReason!=='length')break;

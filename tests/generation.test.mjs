@@ -44,3 +44,10 @@ test('Alpaca loop is stopped, preserved as a draft, excluded from summaries and 
  await assert.rejects(f.generator.start({chatId:'one',content:'Напомни долг.'}).promise,/повторять/);
  const m=f.state.chats[0].messages.at(-1);assert.equal(m.interruptionReason,'repetition');assert.equal(m.interrupted,true);assert.ok(m.content.length<sentence.length*6);assert.equal(f.summaries,0);assert.deepEqual(f.state.chats[1],f.foreign);assert.throws(()=>f.generator.start({chatId:'one',resumeMessageId:m.id}),/Перегенерируйте/);
 });
+
+test('A non-Alpaca local repetition is interrupted and never summarized as a valid story event',async()=>{
+ const sentence='Тонерико смотрит на посетителя и нервно теребит свой блокнот. ';
+ const f=fixture([{chunks:Array(6).fill(sentence)}]),s=f.state;s.connections[0].id='sas-local';s.connections[0].promptFormat='single-system';s.activeConnectionId='sas-local';f.save(s);
+ await assert.rejects(f.generator.start({chatId:'one',content:'Привет.'}).promise,/повторять/);
+ assert.equal(f.state.chats[0].messages.at(-1).interruptionReason,'repetition');assert.equal(f.summaries,0);assert.deepEqual(f.state.chats[1],f.foreign);
+});

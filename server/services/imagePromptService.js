@@ -8,7 +8,9 @@ Each tag must be a short noun/adjective/participle phrase: "round amber eyes", "
 Example output: {"subject":["Toneriko","anthropomorphic cat woman"],"appearance":["cream fur","amber eyes","round glasses"],"clothing":["navy blazer","white shirt"],"pose":["holding a pen and notepad"],"expression":["hopeful gaze"],"environment":["office interior","wooden desk"],"lighting":["soft window light"],"composition":["medium close-up"]}`;
 
 export function visualTags(text){
-  const value=cleanAssistantOutput(text).replace(/^positive prompt\s*:\s*/i,'').trim();
+  // Possessives occur in valid visual noun phrases ("tail around her leg").
+  // Canonicalize those instead of rejecting an otherwise valid structured frame.
+  const value=cleanAssistantOutput(text).replace(/^positive prompt\s*:\s*/i,'').replace(/\b(?:her|his|their)\s+/gi,'').trim();
   if(!value||value.length>12000||/\n\s*\n|[.!?]["”]?\s+[A-Z]|\b(I|you|your|she|he|her|his|they|their)\s+\w+/i.test(value)||/[а-яё]/i.test(value))throw new Error('Промпт должен состоять из английских визуальных тегов, без реплик и продолжения диалога.');
   const tags=value.split(/[,;\n]+/).map(t=>t.trim()).filter(Boolean);
   if(tags.length<3||tags.some(t=>t.split(/\s+/).length>24))throw new Error('Нужен список коротких визуальных тегов через запятую.');
@@ -22,9 +24,9 @@ export function positivePrompt(config,prompt){
 }
 export async function makeSceneImagePrompt(state,chat,getSecret,signal,request=''){
   const character=state.characters.find(c=>c.id===chat.characterId);if(!character)throw new Error('Персонаж не найден.');
-  const tags=await structuredCompletion({state,chat,getSecret,signal,instructions,name:'scene_image_tags',maxTokens:1800,
+  const tags=await structuredCompletion({state,chat,getSecret,signal,instructions,name:'scene_image_tags',maxTokens:1800,adaptInstruction:true,
     schema:{type:'object',properties:Object.fromEntries(fields.map(f=>[f,{type:'array',items:{type:'string',maxLength:140},maxItems:24}])),required:fields,additionalProperties:false},
-    context:{character:{name:character.name,appearance:String(character.appearance||'').slice(0,5000),description:String(character.description||'').slice(0,4500)},scene:chat.scene,recent:chat.messages.filter(m=>m.content).slice(-12).map(m=>({role:m.role,content:m.content.slice(-2000)})),request:String(request).slice(0,1500)},
+    context:{character:{name:character.name,appearance:String(character.appearance||'').slice(0,5000),description:String(character.description||'').slice(0,4500)},scene:chat.scene,recent:chat.messages.filter(m=>m.content&&m.interruptionReason!=='repetition').slice(-12).map(m=>({role:m.role,content:m.content.slice(-2000)})),request:String(request).slice(0,1500)},
     parse:text=>{
       let value;try{value=parseObject(text);}catch{return visualTags(text);}
       if(fields.some(f=>!Array.isArray(value[f])||value[f].some(v=>typeof v!=='string')))throw new Error('Верни все восемь полей с массивами визуальных тегов.');
