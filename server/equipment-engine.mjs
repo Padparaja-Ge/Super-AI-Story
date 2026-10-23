@@ -1,7 +1,6 @@
-import {abilityNames} from '../shared/srp.mjs';
 import {normalizeSkill,normalizeSkills,npcSkills} from '../shared/rpg-rules.mjs';
 import {validateSRP} from '../shared/srp.mjs';
-import {migrateInventory,normalizeInventory,itemBonus,armorOf,checkSkills,pointsOf,abilityModifier,diceExpression} from '../shared/equipment.mjs';
+import {migrateInventory,normalizeInventory,itemBonus,armorOf,diceExpression} from '../shared/equipment.mjs';
 import {logGame} from './tactical.mjs';
 export function combatSkills(a){
  const weapons=a.inventory.filter(i=>i.equipped&&i.quantity&&i.weapon).map(i=>({...normalizeSkill({id:i.id,name:i.name,kind:'physical',...i.weapon,description:[i.appearance,i.description].filter(Boolean).join(' · ')}),itemId:i.id}));
@@ -29,9 +28,6 @@ export function equipmentAction(game,a,r,options){
   const item=a.inventory.find(i=>i.id===r.itemId);if(!item||!item.quantity||!item.weapon&&!item.armor&&!Object.keys(item.buffs).length)throw new Error('Этот предмет нельзя экипировать.');if(typeof r.equipped!=='boolean')throw new Error('Укажите экипировать или снять.');if(item.equipped===r.equipped)return true;
   if(game.inCombat){assertTurn();if(a.grappledBy)throw new Error('Нельзя менять экипировку в захвате.');}
   const next=normalizeInventory(a.inventory.map(i=>i.id===item.id?{...i,equipped:r.equipped}:i));consumeFast(game,a,game.rules.equipFastCost??1);a.inventory=next;refreshEquipment(a,game.rules);logGame(game,`${a.name}: ${r.equipped?'экипировал':'снял'} «${item.name}». КД ${a.armor}; быстрых действий ${a.fastActions}.`);return true;
- }
- if(r.action==='check'&&r.checkId){
-  assertTurn();const skill=checkSkills.find(s=>s[0]===r.checkId);if(!skill)throw new Error('Неизвестный навык проверки.');if(r.dc!==undefined&&(!Number.isInteger(r.dc)||r.dc<1||r.dc>100))throw new Error('Сложность проверки: 1–100.');const roll=rollWithMode(random,{disadvantage:!!a.grappledBy}),value=abilityModifier(pointsOf(a,skill[2])),total=roll.value+value;logGame(game,`${a.name}: ${skill[1]}: 1д${game.rules.checkDie??20} [${roll.rolls}; ${roll.mode}, выбран ${roll.value}] ${value>=0?'+':'−'} ${Math.abs(value)} (${abilityNames[skill[2]]}, ${pointsOf(a,skill[2])} очк.) = ${total}${r.dc!==undefined?`, сложность ${r.dc}: ${total>=r.dc?'успех':'провал'}`:''}.`);return true;
  }
  if(!['potion','useItem','artifact'].includes(r.action))return false;
  assertTurn();if(a.grappledBy)throw new Error('Нельзя использовать предмет в захвате.');const id=r.itemId||(r.kind==='health'?'healthPotions':'slotPotions'),item=a.inventory.find(i=>i.id===id&&i.quantity>0),target=game.actors.find(b=>b.id===(r.targetId||a.id));if(!item||!target)throw new Error('Предмет или цель недоступны.');

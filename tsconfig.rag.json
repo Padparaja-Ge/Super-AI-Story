@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "skipLibCheck": true, "esModuleInterop": true,
+    "declaration": true, "rootDir": "server/rag/ts", "outDir": "server/rag",
+    "types": ["node"]
+  },
+  "include": ["server/rag/ts/**/*.mts"],
+  "exclude": ["node_modules"]
+}

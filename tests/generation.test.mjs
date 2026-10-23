@@ -51,3 +51,16 @@ test('A non-Alpaca local repetition is interrupted and never summarized as a val
  await assert.rejects(f.generator.start({chatId:'one',content:'Привет.'}).promise,/повторять/);
  assert.equal(f.state.chats[0].messages.at(-1).interruptionReason,'repetition');assert.equal(f.summaries,0);assert.deepEqual(f.state.chats[1],f.foreign);
 });
+test('RP coordinator applies handoff stops only to the enabled local Alpaca adapter',async()=>{
+ for(const [id,format,enabled,expected]of [['sas-local','alpaca',true,true],['sas-local','single-system',true,false],['sas-local','alpaca',false,false],['test','alpaca',true,false]]){
+  const f=fixture([{text:'Селина назвала пароль и ждёт.'}]),s=f.state;s.connections[0].id=id;s.connections[0].promptFormat=format;s.activeConnectionId=id;s.settings.localRpAdaptive=enabled;f.save(s);
+  await f.generator.start({chatId:'one',content:'Напомни пароль.'}).promise;const options=f.calls.find(c=>c.options)?.options;
+  assert.equal(Array.isArray(options.stop),expected);if(expected)assert.ok(options.stop.includes('\n\n---\n\nВот ваш следующий ход:'));assert.equal(f.state.chats[0].messages.at(-1).content,'Селина назвала пароль и ждёт.');assert.deepEqual(f.state.chats[1],f.foreign);
+ }
+});
+test('Recognized RP handoff tails stop streaming and never enter saved history or summaries',async()=>{
+ for(const tail of ['\n\n---\n\nВот ваш следующий ход: управляйте игроком.','\n\n### End of Turn: Toneriko\n\nИгроку: управляйте игроком.']){
+  const f=fixture([{chunks:[...'Селина назвала пароль.'].concat([...tail]),reason:'length'}]),s=f.state;s.connections[0].id='sas-local';s.connections[0].promptFormat='alpaca';s.activeConnectionId='sas-local';f.save(s);
+  const result=await f.generator.start({chatId:'one',content:'Напомни пароль.'}).promise;assert.equal(result.incomplete,false);assert.equal(f.state.chats[0].messages.at(-1).content,'Селина назвала пароль.');assert.equal(f.summaries,1);assert.equal(f.calls.length,1);assert.deepEqual(f.state.chats[1],f.foreign);assert.doesNotMatch(JSON.stringify(f.state.chats[0]),/управляйте|End of Turn|следующий ход/);
+ }
+});

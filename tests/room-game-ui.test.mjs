@@ -14,5 +14,5 @@ test('Web D&D keeps open panels, selected checks, drafts and map canvas across r
  t.after(async()=>{clearTimeout(timer);if(child.exitCode===null)child.kill();await fs.rm(directory,{recursive:true,force:true,maxRetries:15,retryDelay:100});});
  const code=await new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);});assert.equal(code,0,log);
  const proof=JSON.parse(await fs.readFile(path.join(directory,'game-ui-proof.json'),'utf8'));
- for(const key of ['success','panelsPreserved','selectionPreserved','draftPreserved','canvasPreserved','mobileUsable'])assert.equal(proof[key],true,JSON.stringify(proof));
+ for(const key of ['success','panelsPreserved','selectionPreserved','draftPreserved','canvasPreserved','mobileUsable','challengeIsolation','singleRoll','completedRoll','resultSurvivesLogTruncation','impossibleVisible','intentPreserved','intentPayload','freeCheckExplicit','offlineHostSkip'])assert.equal(proof[key],true,JSON.stringify(proof));
 });

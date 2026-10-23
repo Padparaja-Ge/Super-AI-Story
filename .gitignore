@@ -3,6 +3,9 @@ dist/
 release/
 runtime/
 data/
+/web-server.json
+/distribution/web-server.json
+web-server.json.*.tmp
 .build/
 .cache/
 .npm-cache/

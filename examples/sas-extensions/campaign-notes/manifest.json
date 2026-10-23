@@ -6,6 +6,15 @@
   "description": "Отдельные заметки по историям и кампаниям, своя страница и команда в верхней панели.",
   "frontend": "index.js",
   "backend": "server.mjs",
-  "styles": ["style.css"],
-  "modes": ["dnd", "custom"]
+  "styles": [
+    "style.css"
+  ],
+  "modes": [
+    "dnd",
+    "custom"
+  ],
+  "permissions": [
+    "studio:full-access",
+    "node:full-access"
+  ]
 }

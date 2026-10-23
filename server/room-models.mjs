@@ -6,6 +6,9 @@ export function normalizeRoomModels(state,value={}){
  }
  if(typeof(value.embeddingModel??'')!=='string'||String(value.embeddingModel||'').length>200)throw new Error('Неверное имя embedding-модели.');
  result.embeddingModel=value.embeddingModel||'';
+ for(const key of ['structuredNarration','allowNarrativeSceneUpdates'])if(value[key]!==undefined){
+  if(typeof value[key]!=='boolean')throw new Error('Неверный переключатель ведущего: '+key);result[key]=value[key];
+ }
  for(const [key,min,max] of [['temperature',0,2],['maxTokens',64,8192]])if(value[key]!==undefined&&value[key]!==''){
   if(typeof value[key]!=='number'||!Number.isFinite(value[key])||value[key]<min||value[key]>max||key==='maxTokens'&&!Number.isInteger(value[key]))throw new Error('Неверный параметр ведущего: '+key);result[key]=value[key];
  }

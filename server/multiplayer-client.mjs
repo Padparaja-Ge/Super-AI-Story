@@ -91,7 +91,8 @@ export function createMultiplayerClient({getState,saveState,dataDir,canAutoSave=
     if(!session.connected||socket?.readyState!==WebSocket.OPEN)throw new Error('Подключитесь к комнате.');
     const requestId=crypto.randomUUID();
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('Нет подтверждения от хоста. Проверьте чат перед повторной отправкой.'));},12000);
+      const preparesCheck=type==='dice'&&Number(body.sides)===20||type==='game'&&['check','prepareCheck'].includes(body.action);
+      const timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('Нет подтверждения от хоста. Проверьте чат перед повторной отправкой.'));},preparesCheck?120000:12000);
       pending.set(requestId,{resolve,reject,timer});socket.send(JSON.stringify({...body,type,requestId}));
     });
   }

@@ -95,6 +95,7 @@ export async function* streamCompletion(connection, secret, messages, options = 
   const body = { model: connection.model, messages:options.adaptInstruction?modelMessages(connection,messages):messages, stream: true, temperature: Number(preset.temperature ?? connection.temperature ?? 0.8), max_tokens: Number(preset.maxTokens ?? connection.maxTokens ?? 1024) };
   if(connection.id==='sas-local'&&connection.sampling)Object.assign(body,samplingBody({...connection.sampling,...options.samplingOverrides}));
   if(options.responseFormat)body.response_format=options.responseFormat;
+  if(options.grammar){if(connection.id!=='sas-local'||options.responseFormat)throw new Error('Грамматика доступна только встроенной модели без response_format.');body.grammar=options.grammar;}
   if(options.stop?.length)body.stop=options.stop;
   if(options.adaptInstruction&&connection.id==='sas-local'&&connection.promptFormat==='alpaca')body.stop=[...new Set([...(body.stop||[]),'### Instruction:','### Response:','### System:'])];
   if((options.disableThinking??options.adaptInstruction)&&connection.id==='sas-local'){body.chat_template_kwargs={enable_thinking:false};body.reasoning_effort='none';}
@@ -106,7 +107,7 @@ export async function* streamCompletion(connection, secret, messages, options = 
   let visible='';
   const accept=(text,flush=false)=>{
     const value=flush?filter.flush():filter.push(String(text));
-    if(value&&(connection.id==='sas-local'||options.guardRepetition)&&!options.responseFormat){
+    if(value&&(connection.id==='sas-local'||options.guardRepetition)&&!options.responseFormat&&!options.grammar){
       visible=(visible+value).slice(-16000);
       if(repeatedReply(visible))throw Object.assign(new Error('Модель зациклилась на повторяющемся тексте. Полученный черновик сохранён; перегенерируйте ответ или измените параметры модели.'),{code:'RESPONSE_REPETITION'});
     }

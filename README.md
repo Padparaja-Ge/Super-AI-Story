@@ -6,12 +6,12 @@
 
 **Персонажи, фанфики и совместные приключения с языковыми моделями.**
 
-[![Скачать SAS 0.9.8](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v0.9.8-9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/tag/v0.9.8)
+[![Скачать SAS 0.9.9](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v0.9.9-9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/tag/v0.9.9)
 [![License](https://img.shields.io/badge/Код-Apache--2.0-blue)](LICENSE)
 ![Windows](https://img.shields.io/badge/Приложение-Windows%2010%2F11%20x64-0078d4)
 ![Stack](https://img.shields.io/badge/React-TypeScript%20%7C%20Node.js%20%7C%20Electron-32b8a5)
 
-[Скачать SAS 0.9.8 для Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.8/SAS-Windows-0.9.8.zip) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
+[Скачать SAS 0.9.9 для Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.9/SAS-Windows-0.9.9.zip) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
 
 </div>
 
@@ -43,11 +43,11 @@ SAS — локальная русскоязычная студия для рол
 Для готового Windows-пакета Node.js и сборка не нужны.
 
 1. Откройте [последний выпуск](https://github.com/Padparaja-Ge/Super-AI-Story/releases/latest).
-2. Скачайте **SAS-Windows-0.9.8.zip**, распакуйте в отдельную папку, например `D:\SAS`.
+2. Скачайте **SAS-Windows-0.9.9.zip**, распакуйте в отдельную папку, например `D:\SAS`.
 3. Запустите **SAS.exe**. Папки `app/` и `engines/` должны оставаться рядом с ним.
 4. В **Настройки → Модели и API** выберите свою GGUF-модель или подключение к API.
 
-Небольшой **SAS-Start-0.9.8.zip** позволяет установить тот же пакет через `Start-SAS.cmd`. Полный архив подходит для установки без сети. Для локальной работы заранее установите нужные модели; облачные API, переводчики и загрузки требуют интернета.
+Небольшой **SAS-Start-0.9.9.zip** позволяет установить тот же пакет через `Start-SAS.cmd`. Полный архив подходит для установки без сети. Для локальной работы заранее установите нужные модели; облачные API, переводчики и загрузки требуют интернета.
 
 В готовой поставке `Start-SAS-Web.cmd` запускает веб-сервер и открывает браузер. Enter закрывает консоль, оставляя сервер в фоне; `Stop-SAS-Web.cmd` завершает его работу. `Repair-SAS.cmd` проверяет и восстанавливает файлы.
 
@@ -95,11 +95,11 @@ npm run package:app
 Для полного Windows-пакета сначала подготовьте локальные компоненты. Можно взять их из проверенного готового ZIP:
 
 ```sh
-npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.8.zip"
+npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.9.zip"
 npm run package:win
 ```
 
-Результат: `release/0.9.8/`. Сценарии не загружают модели автоматически. Подготовка без готового ZIP, состав пакета и команды упаковки веб-версии описаны в [BUILDING.md](docs/BUILDING.md).
+Результат: `release/0.9.9/`. Сценарии не загружают модели автоматически. Подготовка без готового ZIP, состав пакета и команды упаковки веб-версии описаны в [BUILDING.md](docs/BUILDING.md).
 
 ## Структура проекта
 
@@ -153,6 +153,12 @@ release/         Локальные результаты сборки, не хр
 | [Звук в комнатах](docs/MULTIPLAYER-MEDIA.md) | Музыка, микрофон и управление голосом |
 
 Проверки проекта: `npm test` и `npm run build`. Для отчёта об ошибке укажите ОС, версию SAS, режим запуска, модель/API и шаги воспроизведения. Не прикладывайте секреты и чужие персональные данные.
+
+## Расширения и настройки доступа
+
+Перед включением расширения SAS показывает его права и SHA-256 пакета. Backend-расширения имеют полные права процесса Node.js; запускайте только проверенный код. Обновлённый пакет требует нового подтверждения.
+
+Личные сетевые настройки находятся в исключённом из Git `web-server.json`; шаблон — `web-server.example.json`. В готовую поставку включаются только настройки для localhost без ключа.
 
 ## Авторы и лицензии
 

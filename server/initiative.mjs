@@ -2,12 +2,15 @@ import crypto from 'node:crypto';
 import {initiativeOf} from '../shared/equipment.mjs';
 import {logGame} from './tactical.mjs';
 const dice=()=>crypto.randomInt(1,21);
-const eligible=(g,a)=>a.hp>0&&a.online!==false&&(a.player||g.inCombat);
+// Connection presence is not a turn result. A player already enrolled in this
+// round keeps the pending turn while reconnecting; explicit leave/moderation
+// marks turnUnavailable instead. Offline NPCs are not transport peers.
+const eligible=(g,a)=>a.hp>0&&!a.turnUnavailable&&(a.player||g.inCombat&&a.online!==false);
 
 // A round is a snapshot: changing equipment cannot grant a second turn.
 export function beginInitiative(g,random=dice){
  g.initiativeVersion=1;g.initiativeScores={};g.initiativeTies={};g.gmPendingNext=false;g.turn=0;
- const actors=g.actors.filter(a=>eligible(g,a));
+ const actors=g.actors.filter(a=>eligible(g,a)&&a.online!==false);
  for(const a of actors){const score=initiativeOf(a);g.initiativeScores[a.id]=score;logGame(g,`${a.name}: инициатива ${score.dexterity} (Ловкость)${score.equipment.filter(i=>i.penalty).map(i=>` − ${i.penalty} (${i.name})`).join('')} = ${score.value}.`,{kind:'initiative',actorId:a.id,...score});}
  g.order=actors.sort((a,b)=>g.initiativeScores[b.id].value-g.initiativeScores[a.id].value).map(a=>a.id);
  activateInitiative(g,random);
@@ -35,8 +38,9 @@ export function activateInitiative(g,random=dice){
 }
 export function advanceInitiative(g,random=dice){g.turn++;activateInitiative(g,random);}
 export function syncInitiative(g,random=dice){
- // Retain passed positions, skip eliminated/disconnected actors on activation.
+ // Retain passed positions and the current round's disconnected players.
+ // Only an explicit departure or elimination may skip an unfinished turn.
  // New arrivals enter next round in combat, preventing mid-round priority jumps.
- if(!g.inCombat){for(const a of g.actors.filter(a=>eligible(g,a)&&!g.order.includes(a.id))){g.initiativeScores[a.id]=initiativeOf(a);g.order.push(a.id);}const passed=g.order.slice(0,g.turn),remaining=g.order.slice(g.turn).sort((a,b)=>(g.initiativeScores[b]?.value??0)-(g.initiativeScores[a]?.value??0));g.order=[...passed,...remaining];}
+ if(!g.inCombat){for(const a of g.actors.filter(a=>eligible(g,a)&&a.online!==false&&!g.order.includes(a.id))){g.initiativeScores[a.id]=initiativeOf(a);g.order.push(a.id);}const passed=g.order.slice(0,g.turn),remaining=g.order.slice(g.turn).sort((a,b)=>(g.initiativeScores[b]?.value??0)-(g.initiativeScores[a]?.value??0));g.order=[...passed,...remaining];}
  activateInitiative(g,random);
 }

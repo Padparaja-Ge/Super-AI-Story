@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import {focusedRoleplay,uniqueSentences,roleplayMessages,roleplaySampling,repeatedReply} from '../server/roleplay.mjs';
+import {focusedRoleplay,uniqueSentences,roleplayMessages,roleplayWordLimit,roleplaySampling,roleplayStops,createRoleplayOutputFilter,repeatedReply} from '../server/roleplay.mjs';
 import {runtimeArgs} from '../server/local-runtime.mjs';
 import {samplingDefaults} from '../shared/local-options.mjs';
 import {sanitizeState} from '../server/store.mjs';
@@ -39,11 +39,34 @@ test('RP source provenance preserves speaker, names and exact return conditions 
  const p=roleplayMessages([{role:'system',content:'Исходные события ЭТОЙ истории archive'},{role:'user',content:'Когда вернуть печать?'}],{characterName:'Селина',playerName:'Мира',archive:[{id:'old',role:'assistant'}],sourceExcerpts:[{messageId:'old',index:34,text:'Вернуть печать Эльдору после открытия обсерватории.'}]})[0].content;
  assert.match(p,/Ход 35; Селина/);assert.match(p,/после открытия обсерватории/);assert.ok(p.indexOf('Вернуть печать Эльдору')<p.indexOf('Когда вернуть печать?'));assert.ok(p.indexOf('Вернуть печать Эльдору')>p.indexOf('прошлого этой истории'));assert.doesNotMatch(p,/archive/);
 });
+test('RP writing instructions fit small token budgets and account for longer Russian tokenization',()=>{
+ const ru='Я улыбаюсь и пишу: здравствуйте, я Ирис. Как к вам обращаться?',en='I smile and write: hello, I am Iris. What should I call you?';
+ for(const tokens of [32,64,128,256,700,1024]){
+  const russian=roleplayWordLimit(tokens,ru),english=roleplayWordLimit(tokens,en);assert.ok(russian>0&&russian*3<=tokens);assert.ok(russian<english);assert.ok(english<=tokens/2);
+  const prompt=roleplayMessages([{role:'user',content:ru}],{maxTokens:tokens})[0].content;assert.ok(prompt.includes(`в пределах ${russian} слов`));
+ }
+ assert.ok(roleplayWordLimit(700,ru)<250);assert.equal(roleplayWordLimit(131072,ru),600);
+});
 test('RP sampler adaptation keeps manual settings, other modes and active-expert configuration unchanged',()=>{
  assert.equal(roleplaySampling(local,{}).dryMultiplier,.5);
  const c={...local,sampling:{...samplingDefaults,repeatPenalty:1.2,dryMultiplier:.6}};const old=structuredClone(c);
  const r=roleplaySampling(c,{});assert.equal(r.repeatPenalty,undefined);assert.equal(r.dryMultiplier,undefined);assert.equal(roleplaySampling({...c,id:'api'},{}),undefined);assert.deepEqual(c,old);
  assert.equal(roleplaySampling(c,{localRpAdaptive:false}),undefined);
+});
+test('Focused RP stops only explicit out-of-role handoff headings, preserving ordinary prose and opt-out',()=>{
+ const stops=roleplayStops(local,{});const response='Тонерико назвала пароль и срок.\n\n---\n\nВот ваш следующий ход: придумай действие игрока.';
+ assert.equal(response.slice(0,response.indexOf(stops[0])),'Тонерико назвала пароль и срок.');assert.ok(stops.every(s=>s.startsWith('\n\n')));assert.ok(stops.every(s=>!['Дверь открылась.\n\n---\n\nПисьмо заканчивается.','— Вот ваш следующий ход: шах королю! — сказала она.'].some(t=>t.includes(s))));
+ assert.equal(roleplayStops({...local,id:'external'},{}),undefined);assert.equal(roleplayStops({...local,promptFormat:'single-system'},{}),undefined);assert.equal(roleplayStops(local,{localRpAdaptive:false}),undefined);
+});
+test('RP handoff filtering handles every stream split and preserves quoted dialogue, prose and separators',()=>{
+ const prose='Тонерико назвала пароль и срок.';
+ for(const tail of ['\n\n---\n\nВот ваш следующий ход: Ирис может спросить.','\n\n### End of Turn: Toneriko\n\nИгроку: продолжайте.','\r\n\r\n### End of Turn\r\nИгроку: продолжайте.','\n\nИгроку: придумайте следующий пост.','\n\n## YOUR NEXT TURN: choose an action.']){
+  const input=prose+tail;
+  for(let split=0;split<=input.length;split++){const f=createRoleplayOutputFilter(),out=f.push(input.slice(0,split))+f.push(input.slice(split))+f.flush();assert.equal(out.trimEnd(),prose);assert.equal(f.stopped,true);}
+  const f=createRoleplayOutputFilter();assert.equal([...input].map(c=>f.push(c)).join('').trimEnd()+f.flush(),prose);
+ }
+ for(const input of ['Тонерико улыбнулась.\n\n---\n\nИрис ждёт ответа.','— Вот ваш следующий ход: шах королю! — сказала она.','Она написала «Игроку:» в своей записке.','### Новая сцена\n\nВечер в городе.',' '.repeat(600)+'Обычная реплика.','Текст.\n\n---\n']){const f=createRoleplayOutputFilter();assert.equal([...input].map(c=>f.push(c)).join('')+f.flush(),input);assert.equal(f.stopped,false);}
+ const continuation=createRoleplayOutputFilter({lineStart:false});assert.equal(continuation.push('end of turn: это часть предыдущей строки')+continuation.flush(),'end of turn: это часть предыдущей строки');
 });
 test('RP repetition guard detects a long stream loop while allowing normal recurring names and short dialogue',()=>{
  const sentence='Мира разглядывает деревянные столы таверны и ожидает ответа собеседника. ';

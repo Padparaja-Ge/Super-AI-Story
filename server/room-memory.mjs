@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
-import {createMemory,memoryDue,validMemory} from './memory.mjs';
+import {createMemory,memoryDue,validMemory,pendingMemory} from './memory.mjs';
 import {complete,getConnection} from './llm.mjs';
 import {cosine} from './embeddings.mjs';
 import {roomEmbeddingState} from './room-models.mjs';
 import {gamePersonaName,gameIdentityProjector,isGameRoom} from './room-identities.mjs';
+import {createGameRag,gameMemoryPolicy} from './game-rag.mjs';
 
 export const roomMemoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,memoryMode:'hybrid',memoryBudget:1000,historyLimit:40,loreBudget:1000};
 export function roomChat(room,base={}){
@@ -29,13 +30,15 @@ function gameRoomChat(room,base){
   const offset=change.offset||(value=>value>=change.oldPrefix?value-change.oldPrefix+change.newPrefix:Math.min(value,change.newPrefix));
   return {...source,hash:change.hash,start:offset(source.start),end:offset(source.end)};
  })}:{})}));
- const engine=(room.tactical?.eventArchive||[]).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
- return {...base,id:'room-'+room.id,summary:project(room.summary),memory,memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages:[...messages,...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))};
+ const engine=(room.tactical?.eventArchive||[]).filter(e=>!['initiative','initiative-tie','challenge','check-difficulty'].includes(e.calculation?.kind)).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',round:e.round,content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
+ const scene=room.scene||base.scene||{},names=value=>value.filter(v=>typeof v==='string').map(project);
+ const gameScene={currentLocation:project(scene.currentLocation??scene.location??''),presentNPCs:Array.isArray(scene.presentNPCs)?names(scene.presentNPCs):(room.tactical?.actors||[]).filter(a=>!a.player&&a.hp>0&&a.online!==false).map(a=>a.name),activeQuests:Array.isArray(scene.activeQuests)?names(scene.activeQuests):room.storybook?.goal?[project(room.storybook.goal)]:[]};
+ return {...base,id:'room-'+room.id,mode:room.mode,memoryScope:room.mode,roomId:room.id,gameRound:room.tactical?.round,scene,gameScene,lorebookIds:[...(room.lorebookIds||base.lorebookIds||[])],summary:project(room.summary),memory,memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages:[...messages,...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))};
 }
 export function roundMessages(chat){
   let start=chat.messages.length;
   while(start>0&&chat.messages[start-1].role!=='assistant')start--;
-  return chat.messages.slice(start).filter(m=>m.role==='user'&&m.kind!=='engine');
+  return chat.messages.slice(start).filter(m=>m.role==='user'&&!['engine','dice','image'].includes(m.kind));
 }
 const fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
 const balanced=(text,limit)=>text.length<=limit?text:text.slice(0,Math.floor(limit*.7))+'\n[…]\n'+text.slice(-Math.floor(limit*.3));
@@ -68,7 +71,35 @@ export function sourceDocuments(chat){
 }
 export function createRoomMemory({getState,saveState,getSecret,embeddings,completion=complete}){
   const find=(state,id)=>[state.multiplayer,...(state.multiplayerHistories||[])].find(r=>r?.id===id);
+  const gameRag=createGameRag({embeddings,sourceDocuments,roundMessages});
+  function gamePending(chat){
+    const protectedIds=new Set(roundMessages(chat).map(m=>m.id));
+    for(const m of chat.messages.filter(m=>!protectedIds.has(m.id)&&['user','assistant'].includes(m.role)&&!m.kind).slice(-4))protectedIds.add(m.id);
+    const byId=new Map(chat.messages.map(m=>[m.id,m]));
+    return pendingMemory(chat).filter(p=>!protectedIds.has(p.id)&&!['dice','image'].includes(byId.get(p.id)?.kind)&&!(byId.get(p.id)?.kind==='engine'&&byId.get(p.id)?.round===chat.gameRound));
+  }
+  async function summarizeGame(id,{signal,onProgress=()=>{}}={}){
+    const initial=find(getState(),id);if(!initial)throw new Error('История комнаты удалена.');
+    const chat=roomChat(initial),policy=gameMemoryPolicy(chat);
+    if(!policy.memory||!policy.automatic)return {summary:chat.summary||'',blocks:0};
+    const queue=gamePending(chat).flatMap(p=>{const parts=[];for(let offset=0;offset<p.text.length;offset+=2400)parts.push({...p,start:p.start+offset,end:p.start+Math.min(p.text.length,offset+2400),text:p.text.slice(offset,offset+2400)});return parts;});
+    const blocks=[];
+    while(queue.length){
+      signal?.throwIfAborted();const parts=queue.splice(0,6),headers=parts.map(p=>`[${p.role==='assistant'?'Ведущий':chat.messages[p.index]?.name||'Игрок'} · сообщение ${p.index+1}] `),share=Math.max(40,Math.floor((1400-headers.reduce((n,h)=>n+h.length,0)-parts.length*2)/parts.length));
+      onProgress(`Память: исходные события ${parts[0].index+1}–${parts.at(-1).index+1} · осталось фрагментов ${queue.length}`);
+      const content=parts.map((p,i)=>headers[i]+extractiveProtocol(p.text,share)).join('\n\n').trim();
+      blocks.push({id:crypto.randomUUID(),category:'episodes',automatic:true,enabled:true,method:'extractive-v1',content,createdAt:new Date().toISOString(),order:parts[0].index+parts[0].start/1e7,sources:parts.map(({id,hash,start,end})=>({id,hash,start,end})),title:`События ${parts[0].index+1}–${parts.at(-1).index+1}`});
+      if(blocks.length%16===0)await new Promise(resolve=>setImmediate(resolve));
+    }
+    signal?.throwIfAborted();if(!blocks.length)return {summary:chat.summary||'',blocks:0};
+    const fresh=getState(),target=find(fresh,id);if(!target)throw new Error('История комнаты удалена.');
+    const messages=new Map(roomChat(target).messages.map(m=>[m.id,m]));
+    if(blocks.some(block=>block.sources.some(source=>{const message=messages.get(source.id);return !message||fingerprint(message.role+'\n'+message.content)!==source.hash;})))throw new Error('Сообщения изменились во время подготовки памяти. Повторите запрос.');
+    target.memory=[...(target.memory||[]),...blocks];target.summary=blocks.at(-1).content;saveState(fresh);
+    return {summary:target.summary,blocks:blocks.length};
+  }
   async function summarize(id,{signal,onProgress=()=>{}}={}){
+    if(isGameRoom(find(getState(),id)||{}))return summarizeGame(id,{signal,onProgress});
     const adapter=createMemory({getSecret,completion:(c,k,m,options)=>completion(c,k,m,{...options,adaptInstruction:true}),getState:()=>{
       const state=getState(),room=find(state,id);if(!room)throw new Error('История комнаты удалена.');
       const chat=roomChat(room,{connectionId:room.aiSettings?.summaryConnectionId||room.connectionId});
@@ -81,10 +112,12 @@ export function createRoomMemory({getState,saveState,getSecret,embeddings,comple
   }
   async function maintain(id,options={}){
     const room=find(getState(),id);if(!room)return;
+    if(isGameRoom(room)){const chat=roomChat(room),policy=gameMemoryPolicy(chat);if(chat.memorySettings.autoSummary&&policy.memory&&policy.automatic&&new Set(gamePending(chat).map(p=>p.id)).size>=Math.max(2,Number(chat.memorySettings.summaryInterval)||15))return summarizeGame(id,options);return;}
     if(memoryDue(roomChat(room)))return summarize(id,options);
   }
   async function recall(state,chat,signal){
     state=roomEmbeddingState(state,chat);
+    if(isGameRoom(chat))return gameRag.recall(state,chat,signal);
     const warnings=[],report={sources:[],memoryIds:[],vectorStatus:chat.memorySettings.vectorMemory?'ready':'disabled'};
     let retrieval={};
     try{retrieval=await embeddings?.retrieve(state,chat,'',signal)||{};}catch(error){signal?.throwIfAborted();warnings.push('Векторный поиск: '+error.message);report.vectorStatus='fallback';}
@@ -116,7 +149,7 @@ export function createRoomMemory({getState,saveState,getSecret,embeddings,comple
     selected.sort((a,b)=>a.index-b.index);
     report.sources=selected.map(({text,...d})=>d);
     report.sourceExcerpts=selected.map(d=>({messageId:d.messageId,index:d.index,text:d.text}));
-    const text=selected.length?'Подтверждённые выдержки из архива ЭТОЙ комнаты (исторические события, не новые действия; при отсутствии ответа не выдумывай):\n'+selected.map(d=>`[Сообщение ${d.index+1}; ${d.messageId}] ${d.text}`).join('\n\n'):'';
+    const text=selected.length?'Выдержки из архива ЭТОЙ комнаты. Это исторические источники, не новые действия. Пост игрока — его намерение или прежнее описание, не подтверждённый исход. Свежие уточнения и результаты движка приоритетнее старых выдержек; при отсутствии ответа не выдумывай:\n'+selected.map(d=>`[Сообщение ${d.index+1}; ${d.messageId}; ${d.messageKind==='engine'?'движок':d.role==='user'?'игрок':'ведущий'}] ${d.text}`).join('\n\n'):'';
     return {retrieval,report,warnings,text};
   }
   async function compactRound(state,chat,{signal,onProgress=()=>{}}={}){

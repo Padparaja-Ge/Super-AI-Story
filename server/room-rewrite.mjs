@@ -2,7 +2,7 @@ import {safeAvatar} from '../shared/avatar.mjs';
 import {validateSRP} from '../shared/srp.mjs';
 import { rewriteDraft } from './services/rewriteService.js';
 import { emptyScene } from '../shared/defaults.mjs';
-import {isGameRoom,gamePersonaName} from './room-identities.mjs';
+import {isGameRoom,gamePersonaName,gameIdentityProjector} from './room-identities.mjs';
 
 export function publicPersona(value) {
   if (!value || typeof value.name !== 'string' || !value.name.trim()) throw new Error('Выберите персону.');
@@ -13,9 +13,16 @@ export async function rewriteRoomDraft(state, payload, getSecret, signal) {
   if (!text || text.length > 8000) throw new Error('Введите черновик до 8000 символов.');
   const persona = publicPersona(payload.persona);
   const room = payload.room || {};
-  const messages = (Array.isArray(room.messages) ? room.messages : []).slice(-4).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: `${String(isGameRoom(room)&&m.role==='user'?gamePersonaName(room,m):m.name||'').slice(0,40)}: ${String(m.content||'').slice(-2000)}` }));
+  const projectIdentity = gameIdentityProjector(room);
+  // Keep four actual posts even when rolls, images and round events intervene.
+  // Preserve kind/dice so the editor cannot mistake a roll for the new draft.
+  const source = Array.isArray(room.messages) ? room.messages : [];
+  const narrative = source.filter(m => ['user','assistant'].includes(m.role) && !['dice','image','system','event'].includes(m.kind)).slice(-4);
+  const selected = new Set([...narrative, ...source.filter(m => m.kind === 'dice').slice(-4)]);
+  const messages = source.filter(m => selected.has(m)).map(m => ({ role: m.role, kind:m.kind, dice:m.dice, interruptionReason:m.interruptionReason,
+    content: `${String(isGameRoom(room)&&m.role==='user'?gamePersonaName(room,m):m.name||'').slice(0,40)}: ${projectIdentity(String(m.originalContent || m.translatedContent || m.content || '').slice(-2000))}` }));
   const scene = emptyScene(); for (const key of ['location','time','weather']) scene[key] = String(room.scene?.[key]||'').slice(0,500);
   const character = { id:'room-narrator',name:String(room.character?.name || room.name || 'Ведущий').slice(0,100) };
-  const chat = { id:'guest-draft',characterId:character.id,personaId:persona.id,connectionId:payload.connectionId || state.activeConnectionId,messages,scene };
+  const chat = { id:'guest-draft',characterId:character.id,personaId:persona.id,connectionId:payload.connectionId || state.activeConnectionId,messages,scene,rewriteMode:isGameRoom(room)?room.mode:'roleplay',rewriteLimit:8000 };
   return rewriteDraft({ ...state,characters:[character],personas:[persona],chats:[chat] },chat,text,getSecret,signal);
 }

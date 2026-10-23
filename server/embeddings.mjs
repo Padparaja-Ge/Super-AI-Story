@@ -26,8 +26,35 @@ export function poolEmbeddings(parts){
  const result=Array(length).fill(0);for(const {vector,tokens} of parts){const norm=Math.hypot(...vector)||1;for(let i=0;i<length;i++)result[i]+=vector[i]/norm*Math.max(1,tokens);}
  const norm=Math.hypot(...result)||1;return result.map(n=>n/norm);
 }
-export function createEmbeddings({dataDir,getSecret,fetcher=fetch}){
+export function createEmbeddings({dataDir,getSecret,fetcher=fetch,maxTokenCountEntries=4096}){
  const persistentCache=createVectorCache({dataDir});
+ const tokenCounts=new Map(),tokenCacheLimit=Math.max(1,Math.min(16384,Number(maxTokenCountEntries)||4096));
+ const unavailable=message=>Object.assign(new Error(message),{code:'NATIVE_TOKENIZER_UNAVAILABLE'});
+ async function nativeTokenizer(state,signal){
+  signal?.throwIfAborted();const settings={...embeddingDefaults,...state.settings?.embeddings},connection=state.connections?.find(c=>c.id===(settings.connectionId||state.activeConnectionId));
+  if(connection?.id!=='sas-embedding')return null;
+  let base;try{base=new URL(connection.baseUrl);}catch{throw unavailable('Неверный адрес локального embedding-токенизатора.');}
+  if(!['http:','https:'].includes(base.protocol)||base.username||base.password||!(base.hostname==='localhost'||base.hostname==='[::1]'||/^127(?:\.\d{1,3}){3}$/.test(base.hostname)))throw unavailable('Нативный embedding-токенизатор должен работать на этом компьютере.');
+  const model=settings.model||connection.model;if(!model)throw unavailable('Локальная embedding-модель не выбрана.');
+  const tokenLimit=Math.max(64,Math.floor(Math.min(8192,Number(connection.embeddingTokenLimit)||512))),reserve=8;
+  let source=base.href;
+  if(state.settings?.embeddingModelPath){const file=path.resolve(state.settings.embeddingModelPath),info=await fs.promises.stat(file);source=file+'\0'+info.size+'\0'+info.mtimeMs;}
+  signal?.throwIfAborted();const identity=crypto.createHash('sha256').update('native-tokenizer-v1\0'+source+'\0'+model+'\0'+tokenLimit+'\0add_special:true').digest('hex');
+  const url=connection.baseUrl.replace(/\/v1\/?$/,'').replace(/\/$/,'')+'/tokenize',secret=getSecret(connection.id),headers={'Content-Type':'application/json',...(secret?{Authorization:'Bearer '+secret}:{})};
+  const countTokens=async(text,countSignal=signal)=>{
+   countSignal?.throwIfAborted();if(typeof text!=='string'||text.length>200000)throw new Error('Текст embedding-токенизатора: до 200 000 символов.');
+   const key=crypto.createHash('sha256').update(identity+'\0'+text).digest('hex');
+   if(tokenCounts.has(key)){const value=tokenCounts.get(key);tokenCounts.delete(key);tokenCounts.set(key,value);return value;}
+   const requestSignal=countSignal?AbortSignal.any([countSignal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000);
+   const response=await fetcher(url,{method:'POST',headers,body:JSON.stringify({content:text,add_special:true}),signal:requestSignal});countSignal?.throwIfAborted();
+   if(!response.ok)throw unavailable('Токенизация embedding-модели: HTTP '+response.status+'. Используется поиск по словам.');
+   const data=await response.json();countSignal?.throwIfAborted();
+   if(!Array.isArray(data.tokens)||data.tokens.length>1_000_000||data.tokens.some(token=>!Number.isInteger(token)||token<0))throw unavailable('Embedding-токенизатор не вернул корректные токены.');
+   const value=data.tokens.length;tokenCounts.set(key,value);while(tokenCounts.size>tokenCacheLimit)tokenCounts.delete(tokenCounts.keys().next().value);return value;
+  };
+  return {identity,model,tokenLimit,reserve,countTokens};
+ }
+ async function countTokens(state,text,signal){const tokenizer=await nativeTokenizer(state,signal);if(!tokenizer)throw unavailable('Нативный счётчик токенов доступен только для встроенного embedding-движка.');return tokenizer.countTokens(text,signal);}
  async function vectors(state,texts,signal){
   const settings={...embeddingDefaults,...state.settings.embeddings},connection=state.connections.find(c=>c.id===(settings.connectionId||state.activeConnectionId));
   if(!connection?.baseUrl)throw new Error('Выберите подключение для embeddings в настройках памяти.');
@@ -89,5 +116,5 @@ export function createEmbeddings({dataDir,getSecret,fetcher=fetch}){
   for(const d of [...preferred,...ranked.filter(d=>d.kind==='source')]){if(seen.has(d.messageId))continue;selected.push(d);seen.add(d.messageId);if(selected.length===4)break;}
   return {memoryIds:ranked.filter(d=>d.kind==='memory').slice(0,topK).map(d=>d.id),vectorLoreIds:ranked.filter(d=>d.kind==='lore').slice(0,topK).map(d=>d.id),...(includeSources?{sourceExcerpts:selected.sort((a,b)=>a.index-b.index).map(({messageId,index,text,score})=>({messageId,index,text,score})),vectorStatus:'ready'}:{})};
  }
- return {vectors,retrieve,cacheStats:persistentCache.stats};
+ return {vectors,retrieve,nativeTokenizer,countTokens,tokenCacheStats:()=>({entries:tokenCounts.size,limit:tokenCacheLimit}),cacheStats:persistentCache.stats};
 }

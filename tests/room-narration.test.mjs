@@ -13,6 +13,7 @@ import {beginInitiative} from '../server/initiative.mjs';
 import {fitNarrationPrompt,continuationInstruction,publicNarration,createNarrationContinuationJoiner,narrationContextHash} from '../server/room-narration.mjs';
 import {roomChat} from '../server/room-memory.mjs';
 import {messageTokens,buildPrompt} from '../server/prompt.mjs';
+import {formatRag} from '../server/rag/budget.mjs';
 const seed=JSON.parse(await fs.readFile(new URL('../shared/seed.json',import.meta.url),'utf8'));
 const persona={id:'srp',name:'Рей',avatar:'R',kind:'srp',className:'Воин',abilities:defaultAbilities()};
 test('Narration removes malformed service round headings without removing story text or dialogue',async()=>{
@@ -43,6 +44,60 @@ async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
   t.after(async()=>{await room.stop();await new Promise(r=>{provider.close(r);provider.closeAllConnections();});await fs.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
   return {get state(){return state;},save:s=>state=structuredClone(s),get room(){return room;},calls,async reopen(){await room.stop();room=createMultiplayer(opts);await room.start({port:0,personaId:persona.id});}};
 }
+
+test('Opt-in JSON narration publishes only narrative and keeps thinking out of state, memory and regeneration',async t=>{
+ const f=await fixture(t,(_body,calls)=>({text:JSON.stringify({thinking:'PRIVATE_PLAN_MUST_NOT_PERSIST',action_required:'none',action_params:{},narrative_text:calls.length===1?'Страж указывает на дорогу.':'Страж показывает тропу.'}),reason:'stop'}));
+ const s=f.state;s.multiplayer.aiSettings={structuredNarration:true};f.save(s);
+ const first=await f.room.generate();assert.equal(first.message.content,'Страж указывает на дорогу.');
+ assert.doesNotMatch(JSON.stringify(f.state),/PRIVATE_PLAN_MUST_NOT_PERSIST|"thinking"/);
+ assert.equal(f.calls[0].response_format.type,'json_schema');
+ assert.equal(f.state.multiplayer.lastNarration.structuredNarration,true);
+ const second=await f.room.generate({regenerateMessageId:first.message.id});assert.equal(second.message.content,'Страж показывает тропу.');
+ assert.doesNotMatch(JSON.stringify(f.state),/PRIVATE_PLAN_MUST_NOT_PERSIST/);
+ assert.equal(f.state.multiplayer.tactical.round,2,'regeneration does not advance a second round');
+});
+test('Game RAG preserves entity identity instead of decorating metadata.name with the book title',async t=>{
+ const f=await fixture(t,()=>({text:'У прилавка лежит ключ.',reason:'stop'})),s=f.state;
+ s.lorebooks=[{id:'world',name:'Северная гавань',entries:[{id:'merchant',name:'Арвин',type:'npc',constant:true,enabled:true,content:'Хранит серебряный ключ.'}]}];
+ s.multiplayer.lorebookIds=['world'];s.multiplayer.scene.presentNPCs=['Арвин'];f.save(s);await f.room.generate();
+ const rag=f.calls.at(-1).messages.find(m=>m.content.startsWith('[SAS_RAG_SOURCES]'));assert.ok(rag);
+ const record=JSON.parse(rag.content.split('\n')[1]);assert.equal(record.name,'Арвин');assert.equal(record.source,'Лорбук «Северная гавань» · Арвин');
+ assert.equal(f.state.multiplayer.contextReport.rag.count,1);assert.equal(f.state.multiplayer.contextReport.sources[0].name,'Арвин');
+});
+test('The configured zero lore budget removes even constant lore from the actual D&D request',async t=>{
+ const f=await fixture(t,()=>({text:'Страж остаётся у двери.',reason:'stop'})),s=f.state;
+ s.lorebooks=[{id:'world',name:'Мир',entries:[{id:'secret',name:'Сведения',constant:true,enabled:true,content:'LORE_DISABLED_BY_ZERO_BUDGET'}]}];
+ s.multiplayer.lorebookIds=['world'];s.multiplayer.memorySettings.loreBudget=0;f.save(s);
+ await f.room.generate();assert.doesNotMatch(JSON.stringify(f.calls.at(-1).messages),/LORE_DISABLED_BY_ZERO_BUDGET/);
+ assert.equal(f.state.multiplayer.contextReport.rag.count,0);
+});
+
+test('JSON action survives a failed follow-up and server reopen; continuation cannot repeat it',async t=>{
+ const f=await fixture(t,(_body,calls)=>calls.length===1?{text:JSON.stringify({thinking:'PRIVATE_JSON_INTENT',action_required:'update_state',action_params:{field:'weather',value:'Густой туман'},narrative_text:'PREMATURE_NARRATIVE'}),reason:'stop'}:calls.length===2?{text:'',eof:true}:{text:JSON.stringify({thinking:'PRIVATE_RETRY',action_required:'none',action_params:{},narrative_text:'Туман скрывает дальний берег.'}),reason:'stop'});
+ const s=f.state;s.multiplayer.aiSettings={structuredNarration:true,allowNarrativeSceneUpdates:true};f.save(s);
+ await assert.rejects(f.room.generate(),/структурированный ответ/);
+ assert.equal(f.state.multiplayer.scene.weather,'Густой туман');assert.equal(f.state.multiplayer.jsonActionExecutions.length,1);
+ const pending=f.room.status().room.narration;assert.equal(pending.status,'incomplete');assert.equal(pending.canContinue,true);
+ assert.equal(f.state.multiplayer.tactical.round,1);assert.equal(f.state.multiplayer.messages.at(-1).content,'');
+ assert.doesNotMatch(JSON.stringify(f.state),/PRIVATE_JSON_INTENT|PREMATURE_NARRATIVE/);
+ assert.doesNotMatch(JSON.stringify(f.calls[1].messages),/PRIVATE_JSON_INTENT|PREMATURE_NARRATIVE/);
+ // Simulate a process exit after the atomic action commit but before the first
+ // public narrative message was created.
+ const crashed=f.state;crashed.multiplayer.messages=crashed.multiplayer.messages.filter(m=>m.id!==pending.messageId);crashed.multiplayer.narration.status='writing';f.save(crashed);
+ await f.reopen();assert.equal(f.room.status().room.narration.canContinue,true);
+ const continued=await f.room.generate({continueMessageId:pending.messageId});assert.equal(continued.incomplete,false);assert.equal(continued.message.content,'Туман скрывает дальний берег.');
+ assert.match(JSON.stringify(f.calls.at(-1).messages),/SAS_ENGINE_ACTION_RESULT/);
+ assert.equal(f.state.multiplayer.jsonActionExecutions.length,1);assert.equal(f.state.multiplayer.tactical.log.filter(e=>e.calculation?.kind==='scene-update').length,1);
+ assert.equal(f.state.multiplayer.tactical.round,2);assert.doesNotMatch(JSON.stringify(f.state),/PRIVATE_JSON_INTENT|PRIVATE_RETRY/);
+});
+
+test('Strict native fitting discards complete lowest-ranked RAG chunks and preserves instructions and JSON state',async()=>{
+ const chunks=[1,2,3].map(i=>({id:String(i),content:'Архив '+i,metadata:{type:'lore',source:'Мир',tags:[]}}));
+ const system={role:'system',content:'UNCHANGED_SYSTEM_PROMPT'},priority=[{role:'system',content:'STATE '+JSON.stringify({hp:17,dc:15})},{role:'user',content:'Текущий игрок: банка пуста.'}];
+ const out=await fitNarrationPrompt({contextWindow:1024,maxTokens:128},'', [system,{role:'user',content:formatRag(chunks)}],{gameBudget:true,priorityMessages:priority,countTokens:async(_c,_s,messages)=>messages.some(m=>m.content.startsWith('[SAS_RAG_SOURCES]')&&m.content.split('\n').length>2)?1000:400});
+ assert.ok(out.messages.some(m=>m.content===system.content));assert.ok(out.messages.some(m=>m.content===priority[0].content));assert.ok(out.messages.some(m=>m.content===priority[1].content));
+ const rag=out.messages.find(m=>m.content.startsWith('[SAS_RAG_SOURCES]'));assert.equal(rag.content.split('\n').length,2);assert.equal(JSON.parse(rag.content.split('\n')[1]).content,'Архив 1');
+});
 test('D&D prompts use persona names, keep all requests once and sanitize old nickname summaries and regeneration',async t=>{
  const f=await fixture(t,()=>({text:'Страж указывает на дорогу.',reason:'stop'})),s=f.state;
  s.settings.userName='Морвен';s.personas.find(p=>p.id===persona.id).name='Бог';s.multiplayer.tactical.actors[0].name='Бог';
@@ -76,7 +131,7 @@ test('Custom NRI NPC spends two configured slow actions, and a finished narratio
  const state=f.state,g=state.multiplayer.tactical;g.rules.slowActions=2;g.rules.physicalAccuracy=30;g.map={width:12,height:12,tiles:Array(144).fill(0),doors:[],start:[]};Object.assign(g.actors[0],{x:1,y:2,hp:100,maxHp:100,baseMaxHp:100});Object.assign(g.actors[1],{x:1,y:1,actions:2});f.save(state);
  const result=await f.room.generate();assert.equal(result.incomplete,false);
  assert.equal(f.calls.filter(c=>c.messages[0].content.includes('You control only this NPC')).length,2);
- const attacks=f.state.multiplayer.tactical.eventArchive.filter(e=>e.calculation?.kind==='attack');assert.equal(attacks.length,2);assert.ok(attacks.every(e=>e.calculation.hit));
+ const attacks=f.state.multiplayer.tactical.eventArchive.filter(e=>e.calculation?.kind==='attack');assert.equal(attacks.length,2);assert.ok(attacks.every(e=>e.calculation.hit===(e.calculation.roll!==1)),'High accuracy still cannot turn a natural 1 into a hit');
  assert.equal(f.state.multiplayer.tactical.round,2);
 });
 
@@ -130,7 +185,8 @@ test('D&D uses separate rules, lore and narrator configuration, excluding all so
   const f=await fixture(t,()=>({text:'Отряд вошёл в таверну.',reason:'stop'}));const s=f.state;
   s.settings.narrative={instructions:'SOLO_NARRATIVE_SECRET',mode:'writer',length:'long',perspective:'first'};s.activePresetId='solo-preset';s.presets.push({id:'solo-preset',systemPrompt:'SOLO_PRESET_SECRET'});s.plugins=[{id:'custom',enabled:true,prompt:'SOLO_PLUGIN_SECRET'}];s.chats[0].summary='SOLO_MEMORY_SECRET';s.chats[0].memory=[{id:'s',content:'SOLO_MEMORY_SECRET'}];s.fanficProjects=[{id:'f',canon:[{content:'FANFIC_SECRET'}]}];s.multiplayerHistories=[{id:'another',summary:'FOREIGN_ROOM_SECRET',messages:[]}];
   s.lorebooks=[{id:'world',name:'Мир',entries:[{id:'w',name:'Город',content:'WORLD_SOURCE_731',enabled:true,constant:true}]},{id:'rules',name:'Правила проверок',entries:[{id:'r',name:'Проверка',content:'RULE_SOURCE_937',enabled:true,keys:['NEVER_MATCH']}]},{id:'foreign',name:'Чужое',entries:[{id:'f',content:'FOREIGN_LORE_SECRET',constant:true}]}];f.save(s);f.room.configure({lorebookIds:['world'],rulebookIds:['rules']});
-  const c=f.room.context();assert.equal(c.chat.presetId,undefined);assert.equal(c.chat.summary,'');assert.equal(c.chat.memory.length,0);assert.equal(c.state.activePresetId,'');assert.equal(c.state.settings.narrative.instructions,'');assert.deepEqual(c.chat.lorebookIds,['world']);const prompt=buildPrompt(c.state,c.chat.id,'',{extraInstructions:c.extraInstructions});const text=JSON.stringify(prompt.messages);
+  const c=f.room.context();assert.equal(c.chat.presetId,undefined);assert.equal(c.chat.summary,'');assert.equal(c.chat.memory.length,0);assert.equal(c.state.activePresetId,'');assert.equal(c.state.settings.narrative.instructions,'');assert.deepEqual(c.chat.lorebookIds,['world']);
+  await f.room.generate();const text=JSON.stringify(f.calls.at(-1).messages);
   assert.match(text,/РУЛБУКИ — ПРАВИЛА/);assert.match(text,/Рулбук «Правила проверок»/);assert.match(text,/Лорбук «Мир»/);assert.match(text,/RULE_SOURCE_937/);assert.match(text,/WORLD_SOURCE_731/);assert.doesNotMatch(text,/SOLO_.*SECRET|FANFIC_SECRET|FOREIGN_.*SECRET/);
 });
 
@@ -160,7 +216,7 @@ test('Native-budget compaction never crops protected GM rules, engine resources 
 });
 
 test('Oversized lore does not evict engine facts or four current player requests from D&D prompt',async t=>{
-  const f=await fixture(t,()=>({text:'Герои дождались ответа.',reason:'stop'})),s=f.state;s.connections[0].contextWindow=2048;s.lorebooks=[{id:'huge',name:'Длинный лор',entries:[{id:'h',name:'Украшения',constant:true,content:'Многословные украшения мира. '.repeat(1500)}]}];s.multiplayer.lorebookIds=['huge'];s.multiplayer.tactical.actors[0].hp=17;s.multiplayer.tactical.actors[0].slots=3;s.multiplayer.tactical.actors[0].x=12;s.multiplayer.tactical.actors[0].y=4;s.multiplayer.tactical.log.push({id:'calc',round:1,text:'NPC_ATTACK_ALREADY_CALCULATED: Страж промахнулся.'});s.multiplayer.messages=Array.from({length:4},(_,i)=>({id:'p'+i,role:'user',name:'PLAYER_'+i,content:'Игрок '+i+' просит напомнить CODE_'+i+'731. '+('Туман окутывает площадь. '.repeat(220))}));f.save(s);await f.room.generate();
+  const f=await fixture(t,()=>({text:'Герои дождались ответа.',reason:'stop'})),s=f.state;s.connections[0].contextWindow=4096;s.lorebooks=[{id:'huge',name:'Длинный лор',entries:[{id:'h',name:'Украшения',constant:true,content:'Многословные украшения мира. '.repeat(1500)}]}];s.multiplayer.lorebookIds=['huge'];s.multiplayer.tactical.actors[0].hp=17;s.multiplayer.tactical.actors[0].slots=3;s.multiplayer.tactical.actors[0].x=12;s.multiplayer.tactical.actors[0].y=4;s.multiplayer.tactical.log.push({id:'calc',round:1,text:'NPC_ATTACK_ALREADY_CALCULATED: Страж промахнулся.'});s.multiplayer.messages=Array.from({length:4},(_,i)=>({id:'p'+i,role:'user',name:'PLAYER_'+i,content:'Игрок '+i+' просит напомнить CODE_'+i+'731. '+('Туман окутывает площадь. '.repeat(220))}));f.save(s);await f.room.generate();
   const prompt=f.calls.at(-1).messages,contract=prompt.find(m=>m.content.startsWith('[SAS_GM_ROUND_CONTRACT]')),requests=prompt.find(m=>m.content.startsWith('[SAS_CURRENT_PLAYER_REQUESTS]'));
   assert.ok(contract);assert.match(contract.content,/"hp":17/);assert.match(contract.content,/"slots":3/);assert.match(contract.content,/"x":12/);assert.match(contract.content,/NPC_ATTACK_ALREADY_CALCULATED/);assert.ok(requests);for(let i=0;i<4;i++)assert.match(requests.content,new RegExp('CODE_'+i+'731'));
 });

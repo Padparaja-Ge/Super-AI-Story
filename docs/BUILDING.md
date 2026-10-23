@@ -13,7 +13,7 @@
 
 ```sh
 git clone https://github.com/Padparaja-Ge/Super-AI-Story.git
-cd SAS-source
+cd Super-AI-Story
 npm ci
 npm test
 npm run build
@@ -31,6 +31,8 @@ npm run desktop
 Скрипт запуска использует Electron из зависимостей. В Windows создаёт отдельную оболочку с именем и значком SAS, сохраняя исходный npm-пакет Electron.
 
 После изменения React-кода повторите сборку. Для работы с горячим обновлением используйте веб-режим разработки.
+
+Серверные TypeScript-модули памяти находятся в `server/rag/ts/`. `npm run build` также компилирует их в совместимые с Node `.mjs`. Для отдельной проверки используйте `npm run build:server`; для проверки актуальности готовых файлов — `node scripts/build-rag.mjs --check`. API и пример интеграции описаны в [DND-MEMORY-API.md](DND-MEMORY-API.md).
 
 ## Веб-приложение
 
@@ -68,7 +70,7 @@ npm run package:app
 Скачайте полный пакет SAS из Releases и проверьте его SHA-256 по `SHA256SUMS.txt`. Затем:
 
 ```sh
-npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.8.zip"
+npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.9.zip"
 npm run package:win
 ```
 
@@ -134,6 +136,8 @@ npm run package:web
 | `SAS_DISABLE_EXTENSIONS=1` | Безопасный запуск без пользовательских исполняемых расширений |
 
 Секреты внешних сервисов задаются на backend; пример — `.env.example`. Не добавляйте их в `VITE_*`, клиентские файлы, примеры или Git.
+
+Для ручной настройки сети скопируйте `web-server.example.json` в `web-server.json`. Если рабочего файла нет, сервер использует безопасные настройки для localhost; интерфейс создаёт файл при сохранении сетевых настроек. Рабочий файл может содержать ключ и исключён из Git вместе с `.env` и `data/`. Упаковщики берут только проверенный шаблон без ключа, а не настройки компьютера сборщика.
 
 ## Проверка перед публикацией
 

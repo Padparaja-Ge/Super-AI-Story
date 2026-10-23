@@ -13,6 +13,10 @@
     "modes": [
       "dnd",
       "custom"
+    ],
+    "permissions": [
+      "studio:full-access",
+      "node:full-access"
     ]
   },
   "files": {

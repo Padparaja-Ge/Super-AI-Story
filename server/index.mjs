@@ -188,7 +188,7 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
     const rules=enabledRegex(state);
     const build=async extra=>{const result=buildPrompt(state,chatId,input,{...options,...retrieval,...extra});if(focused){if(rules.length)for(let i=0;i<result.messages.length;i++){const m=result.messages[i];if(m.role==='user'||m.role==='assistant')m.content=await applyRegex(m.content,rules,m.role==='user'?'input':'output',{mode:'prompt',depth:result.messages.length-i-1,macros:{char:character?.name||'',user:state.settings.userName}});}result.messages=roleplayMessages(result.messages,{characterName:character?.name,playerName:persona?.name||state.settings.userName,maxTokens:result.budget.maxTokens,sourceExcerpts:retrieval.sourceExcerpts,archive:chat?.messages});result.estimatedTokens=messageTokens(result.messages);result.roleplayAdapter='focused-alpaca';}result.warnings=warnings;return result;};
     let prompt=await build({allowOverflow:connection.id==='sas-local'});
-    if(connection.id==='sas-local'){
+    if(connection.id==='sas-local'&&!retrieval.gameRag){
       const limit=prompt.budget.contextWindow-prompt.budget.maxTokens-32;
       for(let attempt=0;attempt<12;attempt++){
         const actual=await countCompletionTokens(connection,getSecret(connection.id),prompt.messages,{signal:options.signal,adaptInstruction:true});
@@ -286,11 +286,11 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.post('/api/multiplayer/summarize',async(req,res)=>{const task=tasks.run({kind:'room-summary',stage:'Память комнаты'},(signal,job)=>multiplayer.summarizeMemory({signal,onProgress:stage=>{job.stage=stage;}}));if(req.body?.background)return res.status(202).json(task.job);res.json(await task.promise);});
   app.put('/api/multiplayer/messages/:id',(req,res)=>res.json(multiplayer.editMessage(req.params.id,req.body?.content)));
   app.post('/api/multiplayer/players/:id',(req,res)=>res.json(multiplayer.moderate(req.params.id,req.body?.action)));
-  app.post('/api/multiplayer/game',(req,res)=>res.json(multiplayer.act(req.body)));
+  app.post('/api/multiplayer/game',async(req,res)=>res.json(await multiplayer.act(req.body)));
   app.post('/api/multiplayer/client/game',async(req,res)=>res.json(await multiplayerClient.command('game',req.body)));
   app.post('/api/multiplayer/map',async(req,res)=>{const task=tasks.run({kind:'battlemap',stage:'Создаём карту'},(signal,job)=>multiplayer.makeMap({...req.body,signal,onProgress:stage=>{job.stage=stage;}}));res.status(202).json(task.job);});
   app.get('/api/multiplayer/map/:layer',(req,res)=>{const map=getState().multiplayer?.tactical?.map;if(!map)return res.sendStatus(404);res.type('png').send(mapPNG(map,req.params.layer));});
-  app.post('/api/multiplayer/dice',(req,res)=>res.json(multiplayer.dice(req.body?.sides)));
+  app.post('/api/multiplayer/dice',async(req,res)=>res.json(await multiplayer.dice(req.body?.sides)));
   app.post('/api/multiplayer/image-prompt',async(req,res)=>{
     if(!multiplayer.status().running)throw new Error('Откройте комнату.');
     const {state,chat}=multiplayer.context();res.json(await comfyRouter.makeImagePrompt(state,chat,req.body?.instructions));

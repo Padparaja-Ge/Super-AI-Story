@@ -1,4 +1,6 @@
 const {app,BrowserWindow}=require('electron');
+// QA failures belong in the test report, never in a hidden native error dialog.
+for(const name of ['uncaughtException','unhandledRejection'])process.on(name,error=>{console.error(error?.stack||String(error));app.exit(1);});
 const fs=require('node:fs/promises'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const {pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'../..'),directory=process.env.SAS_VOICE_QA_DIR;

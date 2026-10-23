@@ -12,6 +12,7 @@ export function correctRoom(room,request={}){
     after=structuredClone(entries[0]);
   }else if(kind==='dice'){
     message=(room.messages||[]).find(m=>m.id===request.messageId&&m.kind==='dice'&&m.dice);if(!message)throw fail('Сообщение с броском не найдено.');
+    if(message.dice.eventId)throw fail('Этот бросок уже определил исход действия в движке. Назначьте новую попытку или отдельно исправьте состояние участника; изменение свободного кубика не пересчитывает действие.');
     if(!Number.isInteger(request.value)||request.value<1||request.value>message.dice.sides)throw fail('Результат должен укладываться в грани кубика.');
     before=structuredClone(message);message.dice={...message.dice,value:request.value,corrected:true};message.content=`Бросок d${message.dice.sides}: ${request.value} · исправлено мастером`;message.editedAt=new Date().toISOString();after=structuredClone(message);
   }else if(kind==='actor'){

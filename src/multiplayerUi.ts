@@ -21,5 +21,5 @@ export function roomModeLabel(room:{mode?:string;tactical?:unknown}):string {
 }
 
 export function narrationReason(reason:string):string {
-  return reason==='network'?'Соединение с моделью прервалось.':reason==='stopped'?'Генерация остановлена.':'Модель достигла лимита ответа.';
+  return reason==='validation'?'Ответ не прошёл проверку последствий действий. Исправьте текст или повторите проверку.':reason==='network'?'Соединение с моделью прервалось.':reason==='stopped'?'Генерация остановлена.':'Модель достигла лимита ответа.';
 }

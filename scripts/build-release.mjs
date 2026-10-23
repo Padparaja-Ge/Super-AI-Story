@@ -10,6 +10,7 @@ if(!appOnly)for(const file of ['runtime/llama/b10809/cpu/llama-server.exe','runt
 const output=path.join(root,'release',version),source=path.join(output,'staging'),runtime=path.join(output,'windows');
 const inside=target=>{if(!path.resolve(target).startsWith(output+path.sep))throw new Error('Build path outside release workspace');};
 async function run(exe,args,env={}){await new Promise((resolve,reject)=>{const p=spawn(exe,args,{cwd:root,env:{...process.env,...env},stdio:'inherit',windowsHide:true});p.once('error',reject);p.once('exit',code=>code===0?resolve():reject(new Error('Build command failed: '+code)));});}
+await run(process.execPath,[path.join(root,'scripts/build-rag.mjs')]);
 for(const target of [source,runtime,path.join(output,'build/win-unpacked')]){
  inside(target);
  const stat=await fs.lstat(target).catch(()=>null);
@@ -58,6 +59,7 @@ await fs.cp(path.join(output,'build/win-unpacked'),path.join(runtime,'app'),{rec
 if(appOnly){console.log(JSON.stringify({version,application:path.join(runtime,'app'),runtimeBundled:false}));process.exit(0);}
 await fs.cp(path.join(root,'runtime/llama/b10809'),path.join(runtime,'engines/llama/b10809'),{recursive:true,filter:p=>{const rel=path.relative(path.join(root,'runtime/llama/b10809'),p);return !/\.zip$|LICENSE-(?:espeak|kokoro|onnx)|SPEECH-NOTICES/.test(rel)&&(!/\.exe$/i.test(rel)||path.basename(rel)==='llama-server.exe');}});
 await fs.cp(path.join(root,'runtime/speech'),path.join(runtime,'engines/speech'),{recursive:true,filter:p=>!/(?:^|[/\\])(?:kokoro|kokoro-ru|tests|test|benchmarks|__pycache__)(?:[/\\]|$)|\.pyc$/.test(path.relative(path.join(root,'runtime/speech'),p))});
+for(const file of ['LICENSE-Silero-models.txt','SILERO-NOTICE.md'])await fs.copyFile(path.join(root,'server/third-party',file),path.join(runtime,'engines/speech',file));
 const compile=`$compiler=New-Object Microsoft.CSharp.CSharpCodeProvider; $parameters=New-Object System.CodeDom.Compiler.CompilerParameters; $parameters.GenerateExecutable=$true; $parameters.OutputAssembly=$env:SAS_LAUNCHER_EXE; $parameters.ReferencedAssemblies.Add('System.dll') | Out-Null; $parameters.ReferencedAssemblies.Add('System.Windows.Forms.dll') | Out-Null; $parameters.CompilerOptions='/target:winexe /win32icon:"'+$env:SAS_LAUNCHER_ICON+'"'; $result=$compiler.CompileAssemblyFromSource($parameters,[IO.File]::ReadAllText($env:SAS_LAUNCHER_SOURCE)); if($result.Errors.HasErrors){$result.Errors | ForEach-Object {Write-Error $_};exit 1}`;
 // Compile an ordinary tiny launcher, not a self-extracting archive.
 const launcherSource=path.join(output,'build','launcher.cs');await fs.writeFile(launcherSource,(await fs.readFile(path.join(root,'distribution/launcher.cs'),'utf8')).replace(/Assembly(File)?Version\("[0-9.]+"\)/g,(_match,file)=>'Assembly'+(file||'')+'Version("'+version+'.0")'));

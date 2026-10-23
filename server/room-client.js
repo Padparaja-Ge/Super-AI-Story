@@ -36,7 +36,9 @@ $('backup').onclick=async()=>{try{await archiveReady;if(admission!=='approved')t
 $('lobby-ready').onclick=()=>{const own=room.lobby?.players?.find(p=>p.id===selfId);command('lobby-ready',{ready:!own?.ready});};
 $('lobby-leave').onclick=()=>{$('leave').click();};
 function renderLobby(){const waiting=joined&&(admission==='pending'||room.lobby?.enabled&&room.lobby.phase!=='playing');$('lobby').hidden=!waiting;$('game-panels').classList.toggle('lobby-hidden',waiting);$('game-layout').classList.toggle('lobby-hidden',waiting);$('room-media').hidden=admission!=='approved';$('lobby-status').textContent=admission==='pending'?'Заявка отправлена. Ожидаем допуска хоста.':'Вы допущены. Подтвердите готовность и дождитесь начала игры.';const own=room.lobby?.players?.find(p=>p.id===selfId);$('lobby-ready').hidden=admission!=='approved';$('lobby-ready').textContent=own?.ready?'Не готов':'Я готов';$('lobby-players').replaceChildren(...(room.lobby?.players||[]).map(p=>{const item=document.createElement('li');item.textContent=p.name+' · '+p.personaName+' · '+(p.status==='pending'?'ожидает допуска':p.ready?'готов':'не готов');return item;}));}
+function renderDiceLabel(){const byAction=room.tactical?.version===2&&Number($('sides').value)===20;$('dice').textContent=byAction?'d20 по действию':'Бросить кубик';$('dice').title=byAction?'Сначала отправьте свои слова и действия. Ведущий назначит сложность последнего вашего действия, движок рассчитает результат. Свободная проверка доступна в «Мой ход».':'Бросить выбранный кубик';}
 function renderMetadata(){
+  renderDiceLabel();
   browserRecovery.setAllowed(room.autosaveEnabled!==false);
   $('title').textContent=room.name||'Комната';$('character').textContent=room.tactical?'AI Game Master · ведущий всех NPC':'RP-персонаж: '+(room.character?.name||'Не выбран');
   $('lore').textContent='Мир · Лорбук: '+((room.lorebooks||[]).map(b=>b.name).join(', ')||'не выбраны')+(room.tactical?' · Правила · Rule book: '+((room.rulebooks||[]).map(b=>b.name).join(', ')||'не выбраны'):'');
@@ -45,7 +47,7 @@ function renderMetadata(){
   $('participants').replaceChildren(...participants.map(p=>{const el=document.createElement('span');el.className='participant';el.textContent=p.name+' · '+p.personaName+(p.host?' · хост':'')+(p.muted?' · запись запрещена':'');el.prepend(avatarElement(p.avatar));return el;}));
   const incomplete=room.narration?.status==='incomplete';
   $('narration-status').hidden=!incomplete||generating;
-  $('narration-status').textContent=incomplete?'Ответ AI-ведущего не закончен. Хост может дописать его в том же сообщении или завершить вручную. Рассчитанные действия повторно не выполняются.':'';
+  $('narration-status').textContent=incomplete?(room.narration.reason==='validation'?'Ответ AI-ведущего не прошёл проверку последствий. Хост может исправить его или повторить проверку; ход ещё не завершён.':'Ответ AI-ведущего не закончен. Хост может дописать его в том же сообщении или завершить вручную. Рассчитанные действия повторно не выполняются.'):'';
   for(const [id,box] of boxes){const message=messages.get(id),partial=!generating&&(incomplete&&room.narration.messageId===id||message?.interrupted);let hint=box.querySelector('.message-incomplete-status');if(partial&&!hint){hint=document.createElement('small');hint.className='message-incomplete-status';box.append(hint);}if(hint){if(partial)hint.textContent='Ответ не закончен · ожидаем продолжения от хоста';else hint.remove();}}
   const canWrite=joined&&admission==='approved'&&(!room.lobby?.enabled||room.lobby.phase==='playing')&&!generating&&!incomplete&&!participants.find(p=>p.id===selfId)?.muted&&(room.tactical?.version===2?room.tactical.phase==='players'&&room.tactical.order[room.tactical.turn]===selfId:turn.free||turn.eligible?.includes(selfId));
   $('send').disabled=!canWrite||pending.size>0;$('dice').disabled=!canWrite||pending.size>0;
@@ -57,7 +59,8 @@ function renderMetadata(){
 function command(type,body={}){
   if(!joined||socket?.readyState!==WebSocket.OPEN)return error('Нет соединения с комнатой.');
   const requestId=String(Date.now())+Math.random();pending.set(requestId,{type,content:$('content').value});socket.send(JSON.stringify({...body,type,requestId}));renderMetadata();
-  setTimeout(()=>{if(pending.delete(requestId)){error('Нет подтверждения от хоста. Проверьте чат перед повторной отправкой.');renderMetadata();}},12000);
+  const preparesCheck=type==='dice'&&Number(body.sides)===20||type==='game'&&['check','prepareCheck'].includes(body.action);
+  setTimeout(()=>{if(pending.delete(requestId)){error('Нет подтверждения от хоста. Проверьте чат перед повторной отправкой.');renderMetadata();}},preparesCheck?120000:12000);
 }
 $('connect').onclick=async()=>{
   error('');if(!$('name').value.trim()||!$('code').value.trim())return error('Введите имя и код комнаты.');currentPersona=personas.find(p=>p.id===$('persona').value);if(!currentPersona)return error('Выберите свою персону.');
@@ -86,6 +89,7 @@ $('connect').onclick=async()=>{
 };
 $('compose').onsubmit=e=>{e.preventDefault();error('');const content=$('content').value.trim();if(content)command('message',{content});};
 $('dice').onclick=()=>{error('');command('dice',{sides:Number($('sides').value)});};
+$('sides').onchange=renderDiceLabel;
 $('leave').onclick=()=>{void browserRecovery.flush().catch(()=>{});socket?.close(1000,'Left room');joined=false;pending.clear();$('room').style.display='none';$('join').style.display='block';renderMetadata();};
 $('export').onclick=async()=>{await archiveReady;if(!archiveComplete){error('Полный архив недоступен. Переподключитесь к хосту перед экспортом.');return;}const href=URL.createObjectURL(new Blob([JSON.stringify({room,messages:[...archive.values()]},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=href;a.download='SAS-multiplayer.json';a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);};
 $('improve').onclick=()=>{

@@ -59,7 +59,9 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const persona = state.personas?.find(p => p.id === (chat.personaId || character.personaId));
   const settings = { ...state.settings, ...chat.memorySettings, userName:persona?.name || state.settings?.userName };
   const expand = text => macros(text, character, settings);
-  const lore = selectLore(state, chat, content, options);
+  // Game retrieval already contains bounded excerpts. Re-inserting whole lore
+  // entries or summary blocks here defeats both relevance and the RAG cap.
+  const lore = options.gameRag ? {selected:[],used:0,budget:0} : selectLore(state, chat, content, options);
   const sections = {
     charDescription: [character.description, character.appearance && `Внешность: ${character.appearance}`, ...(character.blocks || []).filter(block => block.enabled !== false).map(block => `${block.name}: ${block.content}`)].filter(Boolean).join('\n\n'),
     charPersonality: character.personality && `Личность: ${character.personality}`,
@@ -82,7 +84,7 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const lengths = { short: 'до 150 слов', medium: '150–300 слов', long: 'подробные ответы от 300 слов' };
   baseSections.push(`Режим: ${modes[narrative.mode] || narrative.mode || 'Ролевая история'}. Время: ${tenses[narrative.tense] || narrative.tense || 'настоящее'}. Повествование: ${perspectives[narrative.perspective] || narrative.perspective || 'третье лицо'}. Длина: ${lengths[narrative.length] || narrative.length || 'средняя'}.`, narrative.instructions || '');
   const memoryMode = settings.memoryMode || 'hybrid';
-  if (['hybrid', 'pinned', 'full', 'manual', 'summary'].includes(memoryMode)) {
+  if (!options.gameRag && ['hybrid', 'pinned', 'full', 'manual', 'summary'].includes(memoryMode)) {
     if (memoryMode !== 'summary') {
       const categories = { facts: 'Факты и состояние', relationships: 'Отношения', episodes: 'Эпизоды', diary: 'Дневник' };
       const availableMemory=validMemory(chat).filter(m=>!['pinned','manual'].includes(memoryMode)||!m.automatic),recent=availableMemory.filter(m=>m.automatic).slice(-2).map(m=>m.id);
@@ -115,16 +117,16 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const maxTokens = number(preset?.maxTokens ?? connection.maxTokens, 1024, 1, options.compact?Math.floor(contextWindow/2):contextWindow-1);
   const available = Math.min(contextWindow - maxTokens,Number(options.inputBudget)||contextWindow);
   let droppedMessages = Math.max(0, chat.messages.length - history.length);
-  if(options.compact){
+  if(options.compact&&!options.gameRag){
     // Keep the continuation instruction even when a card contains a huge post-history block.
     let tailChars=Math.max(0,(Math.floor(available/3)-tail.length*7)*3);
     for(const m of tail){m.content=m.content.slice(0,tailChars);tailChars=Math.max(0,tailChars-m.content.length);}
   }
-  if(options.compact&&messageTokens([...prefix,...tail])>available-100){
+  if(options.compact&&!options.gameRag&&messageTokens([...prefix,...tail])>available-100){
     let chars=Math.max(0,(available-messageTokens(tail)-Math.min(256,Math.floor(available/4))-prefix.length*7)*3);
     for(const m of prefix){m.content=m.content.slice(0,chars);chars=Math.max(0,chars-m.content.length);}
   }
-  if(options.preserveHistory&&messageTokens([...prefix,...history,...tail])>available){
+  if(options.preserveHistory&&!options.gameRag&&messageTokens([...prefix,...history,...tail])>available){
     let chars=Math.max(0,(available-messageTokens([...history,...tail])-prefix.length*7-20)*3);
     for(const m of prefix){m.content=m.content.slice(0,chars);chars=Math.max(0,chars-m.content.length);}
   }
@@ -132,6 +134,6 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   if(options.compact&&history.length&&messageTokens([...prefix,...history,...tail])>available){const chars=Math.max(0,(available-messageTokens([...prefix,...tail])-8)*3);history[0].content=history[0].content.slice(-chars);if(!chars)history.pop();}
   const messages = [...prefix, ...history, ...tail];
   const estimatedTokens = messageTokens(messages);
-  if (estimatedTokens > available && !options.allowOverflow) throw new Error(`Промпт (~${estimatedTokens} токенов) превышает доступный контекст ${available}. Сократите карточку, память или лор, либо увеличьте контекст подключения. Оценка приблизительная.`);
+  if (estimatedTokens > available && !options.allowOverflow && !options.gameRag) throw new Error(`Промпт (~${estimatedTokens} токенов) превышает доступный контекст ${available}. Сократите карточку, память или лор, либо увеличьте контекст подключения. Оценка приблизительная.`);
   return { messages, estimatedTokens, activeLore: lore.selected.map(entry => ({ id: entry.id, name: entry.name })), budget: { contextWindow, maxTokens, available, loreBudget: lore.budget, loreUsed: lore.used }, breakdown: { instructions: messageTokens(prefix), history: messageTokens(history), newMessage: messageTokens(tail), droppedMessages, estimate: 'Приблизительно: 1 токен на 3 символа; точное число зависит от модели.' } };
 }
