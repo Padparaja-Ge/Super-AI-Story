@@ -9,7 +9,7 @@ import {startServer} from '../server/index.mjs';
 import {startWebServer} from '../server/web.mjs';
 import {parseDevices,recommendedDevice,runtimeArgs} from '../server/local-runtime.mjs';
 
-async function temp(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-update-'));t.after(async()=>{assert.ok(path.resolve(dir).startsWith(path.join(os.tmpdir(),'sas-update-')));await fs.rm(dir,{recursive:true,force:true});});return dir;}
+async function temp(t,cleanup=async()=>{}){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-update-'));t.after(async()=>{assert.ok(path.resolve(dir).startsWith(path.join(os.tmpdir(),'sas-update-')));await cleanup();await fs.rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:50});});return dir;}
 const request=(port,route,body,method)=>fetch(`http://127.0.0.1:${port}/api${route}`,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json','X-SAS-Client':'test'},...(body!==undefined?{body:JSON.stringify(body)}:{})});
 
 test('Network defaults allow loopback including mapped IPv4; deny external addresses',()=>{
@@ -30,16 +30,16 @@ test('Network rules persist, reload from file, refuse self-lockout and fail clos
   await fs.writeFile(file,'broken');assert.equal(policy.allowed('10.0.0.4'),false);assert.match(policy.snapshot().error,/web-server/);
 });
 test('Web gateway enforces IP rules before UI, login and APIs; forwarding header cannot impersonate an allowed IP',async t=>{
-  const dir=await temp(t),file=path.join(dir,'web-server.json');
+  let web;const dir=await temp(t,()=>web?.close()),file=path.join(dir,'web-server.json');
   await fs.writeFile(file,JSON.stringify({...networkDefaults,allowlist:['10.0.0.3']}));
-  const web=await startWebServer({port:0,dataDir:dir,coreMode:'embedded',networkFile:file});t.after(()=>web.close());
+  web=await startWebServer({port:0,dataDir:dir,coreMode:'embedded',networkFile:file});
   for(const route of ['/','/api/state','/auth/login'])assert.equal((await fetch(`http://127.0.0.1:${web.port}${route}`,{headers:{'x-forwarded-for':'10.0.0.3'}})).status,403);
   await fs.writeFile(file,JSON.stringify(networkDefaults));assert.equal((await request(web.port,'/state')).status,200);
   const data=await(await request(web.port,'/network')).json();assert.ok(data.clients.some(c=>c.ip==='127.0.0.1'));assert.equal(data.file,file);
   assert.equal((await request(web.port,'/network',{...networkDefaults,port:45678},'PUT')).status,200);
 });
 test('Host creates independent multiplayer histories, resumes stored context, deletes one and retains others across restart',async t=>{
-  const dir=await temp(t);let runtime=await startServer({port:0,dataDir:dir});t.after(()=>runtime.close());
+  let runtime;const dir=await temp(t,()=>runtime?.close());runtime=await startServer({port:0,dataDir:dir});
   const store=runtime.app.locals.runtime.store,personaId=store.getState().personas[0].id;
   const call=(route,body,method)=>request(runtime.port,route,body,method);
   const first=await(await call('/multiplayer/start',{port:0,personaId,chatId:'chat-first',newHistory:true,name:'Первая'})).json();
@@ -59,13 +59,13 @@ test('Host creates independent multiplayer histories, resumes stored context, de
   assert.equal((await call('/multiplayer/start',{port:0,personaId,historyId:'not-found'})).status,400);
 });
 test('Whole-state saves cannot overwrite archived room histories',async t=>{
-  const dir=await temp(t),runtime=await startServer({port:0,dataDir:dir});t.after(()=>runtime.close());const store=runtime.app.locals.runtime.store;
+  let runtime;const dir=await temp(t,()=>runtime?.close());runtime=await startServer({port:0,dataDir:dir});const store=runtime.app.locals.runtime.store;
   const state=store.getState();state.multiplayerHistories=[{id:'preserve',messages:[{content:'kept'}]}];store.saveState(state);
   const body=store.getState();body.multiplayerHistories=[];
   assert.equal((await request(runtime.port,'/state',body,'PUT')).status,200);assert.equal(store.getState().multiplayerHistories[0].id,'preserve');
 });
 test('Importing a model folder collects GGUF files and skips later split shards',async t=>{
-  const dir=await temp(t),runtime=await startServer({port:0,dataDir:path.join(dir,'data')});t.after(()=>runtime.close());
+  let runtime;const dir=await temp(t,()=>runtime?.close());runtime=await startServer({port:0,dataDir:path.join(dir,'data')});
   const models=path.join(dir,'models');await fs.mkdir(models);
   for(const name of ['one.gguf','two-00001-of-00002.gguf','two-00002-of-00002.gguf'])await fs.writeFile(path.join(models,name),Buffer.from('GGUF0000'));
   await fs.writeFile(path.join(models,'notes.txt'),'not a model');

@@ -23,7 +23,7 @@ async function setup(t,{mode='dnd',lobby=true,autosave=true}={}){
  const opened=await room.start({port:0,personaId:persona.id,newHistory:true,mode,chatId:state.chats[0].id,lobby});const clients=[];
  const makeClient=()=>{const c=createMultiplayerClient({getState:()=>({personas:[persona]}),dataDir:path.join(dir,'guest-'+clients.length),canAutoSave:()=>saveEnabled});clients.push(c);return c;};
  const join=c=>c.join({url:opened.url,personaId:persona.id,name:'Гость'});
- t.after(async()=>{for(const c of clients)await c.close();await room.stop();await fs.rm(dir,{recursive:true,force:true});});
+ t.after(async()=>{for(const c of clients)await c.close();await room.stop();await fs.rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:50});});
  return {dir,room,opened,makeClient,join,get state(){return state;},saveState,translations,setAutoSave:v=>{saveEnabled=v;},getState};
 }
 test('Lobby hides history and engine before host approval, gates ready/start and protects HTTP archive',async t=>{
