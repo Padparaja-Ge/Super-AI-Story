@@ -33,7 +33,7 @@ foreach($url in @('file:///C:/Windows/System32/calc.exe','https://example.com/',
 Write-Output 'WEB_RESULT_OK'
 `;
  const file=path.join(dir,'check.ps1');await fs.writeFile(file,script);
- const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',file],{encoding:'utf8',windowsHide:true,timeout:15000});
- assert.equal(result.status,0,result.stdout+'\n'+result.stderr);assert.match(result.stdout,/WEB_RESULT_OK/);
+ const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',file],{encoding:'utf8',windowsHide:true,timeout:process.env.CI?90000:15000});
+ assert.equal(result.status,0,[result.error?.message,result.stdout,result.stderr].filter(Boolean).join('\n'));assert.match(result.stdout,/WEB_RESULT_OK/);
  for(const name of ['Start-SAS-Web.cmd','Start-SAS-Web-Shell.cmd'])assert.match(await fs.readFile(path.join('distribution',name),'utf8'),/-KeepConsole/);
 });

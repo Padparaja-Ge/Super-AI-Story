@@ -61,6 +61,6 @@ Write-Output 'INSTALLER_TESTS_OK'
 `;
  const scriptFile=path.join(dir,'check.ps1');await fs.writeFile(scriptFile,script);
  const env={...process.env};for(const key of Object.keys(env))if(key.toLowerCase()==='path')delete env[key];env.PATH=path.join(process.env.SystemRoot,'System32');
- const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',scriptFile],{env,encoding:'utf8',windowsHide:true,timeout:30000});
- assert.equal(result.status,0,result.stdout+'\n'+result.stderr);assert.match(result.stdout,/INSTALLER_TESTS_OK/);
+ const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',scriptFile],{env,encoding:'utf8',windowsHide:true,timeout:process.env.CI?90000:30000});
+ assert.equal(result.status,0,[result.error?.message,result.stdout,result.stderr].filter(Boolean).join('\n'));assert.match(result.stdout,/INSTALLER_TESTS_OK/);
 });
