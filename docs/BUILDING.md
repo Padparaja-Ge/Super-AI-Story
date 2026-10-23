@@ -70,7 +70,7 @@ npm run package:app
 Скачайте полный пакет SAS из Releases и проверьте его SHA-256 по `SHA256SUMS.txt`. Затем:
 
 ```sh
-npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.9.zip"
+npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.10.zip"
 npm run package:win
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "super-ai-story",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "private": true,
   "type": "module",
   "description": "SAS — локальная студия персонажей, миров и LLM",
