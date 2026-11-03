@@ -35,9 +35,11 @@ test('Valid four-section Qwen and unrelated architectures are passed through wit
  await assert.rejects(fs.access(cache),{code:'ENOENT'});
 });
 test('Split models and invalid Qwen sections are rejected precisely; cancellation leaves original unchanged',async t=>{
- const {file,cache}=await setup(t);
- await fs.writeFile(file,fixture({splitCount:2}));await assert.rejects(compatibleGguf(file,cache),/разделённый/);
- await fs.writeFile(file,fixture({sections:[0,0,0]}));await assert.rejects(compatibleGguf(file,cache),/Некорректные секции/);
+ const {dir,file,cache}=await setup(t);
+ // Independent models must not share a metadata cache key on coarse Windows timestamps.
+ const splitFile=path.join(dir,'split.gguf'),invalidFile=path.join(dir,'invalid.gguf');
+ await fs.writeFile(splitFile,fixture({splitCount:2}));await assert.rejects(compatibleGguf(splitFile,cache),/разделённый/);
+ await fs.writeFile(invalidFile,fixture({sections:[0,0,0]}));await assert.rejects(compatibleGguf(invalidFile,cache),/Некорректные секции/);
  const original=fixture();await fs.writeFile(file,original);await assert.rejects(compatibleGguf(file,cache,{signal:AbortSignal.abort()}),{name:'AbortError'});assert.deepEqual(await fs.readFile(file),original);
 });
 test('Truncated compatibility cache is rebuilt and partial files are removed when interrupted',async t=>{
