@@ -6,4 +6,7 @@ import '@fontsource-variable/manrope';
 import './styles.css';
 import './multiplayer.css';
 import './layout-fixes.css';
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode>{window.location.hash==='#room-rewrite'?<LocalRoomRewrite/>:<App/>}</React.StrictMode>);
+import {initializeInterfaceLanguage,useInterfaceLanguage} from './i18n';
+function LocalizedApplication(){useInterfaceLanguage();return window.location.hash==='#room-rewrite'?<LocalRoomRewrite/>:<App/>;}
+void initializeInterfaceLanguage();
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><LocalizedApplication/></React.StrictMode>);

@@ -17,7 +17,7 @@ for(const target of [source,runtime,path.join(output,'build/win-unpacked')]){
  if(stat){if(stat.isSymbolicLink()||!(await fs.realpath(target)).toLowerCase().startsWith((output+path.sep).toLowerCase()))throw Error('Unsafe build output cleanup');await fs.rm(target,{recursive:true,force:true,maxRetries:5});}
 }
 await fs.mkdir(source,{recursive:true});await fs.mkdir(runtime,{recursive:true});
-const excluded=/\.d\.mts$|(?:LICENSE-(?:espeak|kokoro|onnx)|ESPEAK-BUILD)|\.(?:zip|7z|log|pyc)$|(?:^|[/\\])__pycache__(?:[/\\]|$)|(?:kokoro-worker|phonemes|phoneme-normalize)\.mjs$/;
+const excluded=/locales[/\\]source\.json$|\.d\.mts$|(?:LICENSE-(?:espeak|kokoro|onnx)|ESPEAK-BUILD)|\.(?:zip|7z|log|pyc)$|(?:^|[/\\])__pycache__(?:[/\\]|$)|(?:kokoro-worker|phonemes|phoneme-normalize)\.mjs$/;
 for(const folder of ['assets','server','electron','shared'])await fs.cp(path.join(root,folder),path.join(source,folder),{recursive:true,filter:p=>!excluded.test(p)});
 for(const file of ['COPYRIGHT.md','LICENSE','NOTICE','THIRD-PARTY.md'])await fs.copyFile(path.join(root,file),path.join(source,file));
 const edition=path.join(source,'shared/speech-edition.mjs');

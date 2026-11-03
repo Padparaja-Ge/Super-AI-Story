@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createTranslator} from '../shared/ui-language.mjs';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -24,10 +25,11 @@ class Element{
 const source=await fs.readFile(new URL('../server/room-client.js',import.meta.url),'utf8');
 const ast=ts.createSourceFile('room-client.js',source,ts.ScriptTarget.ES2022,true);
 const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&['avatarElement','addMessage'].includes(node.name?.text)).map(node=>node.getText(ast)).join('\n');
-function fixture(){
+const english=JSON.parse(await fs.readFile(new URL('../shared/locales/en.json',import.meta.url),'utf8'));
+function fixture(language='ru'){
  const nodes=new Map([['messages',new Element('div')],['code',new Element('input')]]);nodes.get('code').value='qa-code';
  const document={createElement:tag=>new Element(tag),createTextNode:text=>new Element('#text',text)};
- const context=vm.createContext({document,room:{avatars:{player:'✦'}},messages:new Map(),archive:new Map(),boxes:new Map(),$:id=>nodes.get(id)});
+ const context=vm.createContext({document,uiText:createTranslator({en:english},()=>language),room:{avatars:{player:'✦'}},messages:new Map(),archive:new Map(),boxes:new Map(),$:id=>nodes.get(id)});
  vm.runInContext(functions,context);return {...context,container:nodes.get('messages')};
 }
 

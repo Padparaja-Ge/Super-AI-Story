@@ -1,3 +1,4 @@
+import {t} from './i18n';
 import * as React from 'react';
 import {createRoot} from 'react-dom/client';
 import {useEffect,useRef,useSyncExternalStore} from 'react';
@@ -54,7 +55,7 @@ function Mounted({item,data}:{item:Contribution;data?:any}){
  const ref=useRef<HTMLDivElement>(null),[error,setError]=React.useState('');
  useEffect(()=>{if(!ref.current)return;let cleanup:any;try{cleanup=item.mount?.(ref.current,{...extensionRuntime.getContext(),...data});}catch(e:any){setError(e.message);}return()=>{if(typeof cleanup==='function')try{cleanup();}catch{}ref.current?.replaceChildren();};},[item]);
  useEffect(()=>{ref.current?.dispatchEvent(new CustomEvent('sas:context',{detail:{...extensionRuntime.getContext(),...data}}));},[data]);
- return <div className="extension-mount" data-extension={item.owner} ref={ref}>{error&&<p role="alert" className="error-text">{error}</p>}</div>;
+ return <div className="extension-mount" data-extension={item.owner} ref={ref}>{error&&<p role="alert" className="error-text">{t(error)}</p>}</div>;
 }
 export function ExtensionSlot({name,data}:{name:string;data?:any}){const state=useExtensions();return <div className={'extension-slot extension-slot-'+name}>{state.slots.filter(c=>c.slot===name).map(item=><Mounted key={item.key} item={item} data={data}/>)}{state.commands.filter(c=>c.slot===name).map(item=><button className="btn" key={item.key} onClick={()=>Promise.resolve().then(()=>item.run?.({...extensionRuntime.getContext(),...data})).catch(e=>bridge.notify(e.message,true))}>{item.title||item.label||item.key}</button>)}</div>;}
-export function ExtensionPage({view}:{view:string}){const state=useExtensions(),page=state.pages.find(p=>'extension:'+p.key===view);return <div className="page">{page?<><h1>{page.title}</h1><Mounted key={page.key} item={page}/></>:<p>Страница расширения недоступна. Включите его в разделе «Расширения».</p>}</div>;}
+export function ExtensionPage({view}:{view:string}){const state=useExtensions(),page=state.pages.find(p=>'extension:'+p.key===view);return <div className="page">{page?<><h1>{page.title}</h1><Mounted key={page.key} item={page}/></>:<p>{t("Страница расширения недоступна. Включите его в разделе «Расширения».")}</p>}</div>;}

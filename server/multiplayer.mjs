@@ -238,11 +238,13 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       }
       const mapLayer=pathname.match(/^\/map\/(layout|normal|depth)$/);if(req.method==='GET'&&mapLayer&&checkCode(target.searchParams.get('code'))&&(!roomData().lobby?.enabled||isAdmittedRequest(req))&&roomData().tactical?.map){res.writeHead(200,{'Content-Type':'image/png'});res.end(mapPNG(roomData().tactical.map,mapLayer[1]));return;}
       res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
-      if(req.method==='GET'&&['/srp.mjs','/rpg-rules.mjs','/equipment.mjs'].includes(pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fs.readFileSync(new URL('../shared'+pathname,import.meta.url)));return;}
+      if(req.method==='GET'&&['/srp.mjs','/rpg-rules.mjs','/equipment.mjs','/ui-language.mjs'].includes(pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(fs.readFileSync(new URL('../shared'+pathname,import.meta.url)));return;}
+      const locale=pathname.match(/^\/room-locales\/(en|ja|zh-CN|ko)\.json$/);
+      if(req.method==='GET'&&locale){res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(new URL('../shared/locales/'+locale[1]+'.json',import.meta.url)));return;}
       if(req.method==='GET'&&['/room-media-runtime.js','/room-media-client.js','/room-recovery.js','/room-media.css'].includes(pathname)){
         const packaged=pathname==='/room-media-runtime.js'||pathname==='/room-media.css',file=packaged?(fs.existsSync(new URL('../public'+pathname,import.meta.url))?'../public':'../dist')+pathname:'.'+pathname;res.writeHead(200,{'Content-Type':pathname.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(new URL(file,import.meta.url)));return;
       }
-      if(req.method==='GET'&&['/','/play','/room-client.js','/room-game.js','/room-sheet.js'].includes(pathname)){
+      if(req.method==='GET'&&['/','/play','/room-client.js','/room-game.js','/room-sheet.js','/room-i18n.js'].includes(pathname)){
         const js=pathname.endsWith('.js');
         res.writeHead(200,{'Content-Type':js?'text/javascript; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob: mediastream:; frame-ancestors 'none'"});
         res.end(fs.readFileSync(new URL(js?'.'+pathname:'./room-page.html',import.meta.url)));return;

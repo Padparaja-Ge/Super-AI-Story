@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {bundleExecutable,installBundle,execute} from './llama-bundle.mjs';
 import {normalizeOptions} from '../shared/local-options.mjs';
 import {readGguf} from './gguf.mjs';
+import {compatibleGguf,modelLoadError,modelCompatibilityCache} from './gguf-compat.mjs';
 import {resolveRuntimeOptions} from './moe.mjs';
 import {chatTemplateProblem} from '../shared/chat-template.mjs';
 
@@ -83,18 +84,20 @@ export function createLocalRuntime({dataDir,getState,saveState,setSecret=()=>{},
       const wanted=embedding?(settings.embeddingDevice||'cpu'):(settings.localDevice||'auto'),device=inventory.devices.find(d=>d.id===(wanted==='auto'?inventory.recommendedId:wanted));
       if(!device)throw new Error('Выбранное устройство больше не доступно. Выберите автоматический режим или другое устройство.');
       const file=await executable(device.backend);if(!file)throw new Error('Локальная модель не подготовлена для этого устройства.');
-      const modelInfo=await readGguf(modelPath);
+      const compatible=await compatibleGguf(modelPath,await modelCompatibilityCache(dataDir),{signal,onProgress:progress=>{status.stage=progress.stage;status.progress=progress;}}),modelInfo=compatible.info;
       const context=Math.min(embedding?8192:131072,...(embedding&&modelInfo.contextLength?[modelInfo.contextLength]:[]),Math.max(embedding?128:512,Math.trunc(Number(embedding?settings.embeddingContext:settings.contextSize)||(embedding?2048:8192))));
       const resolved=resolveRuntimeOptions({...settings,...(embedding?{moeAuto:false}:{})},modelInfo,device,context),options=resolved.options,recommendation=resolved.recommendation;
       const layers=settings.gpuLayers==='auto'||settings.gpuLayers===undefined?'auto':Math.min(999,Math.max(-1,Math.trunc(Number(settings.gpuLayers)||0)));
       const port=await freePort(),key=crypto.randomBytes(32).toString('hex');signal.throwIfAborted();
       const url=`http://127.0.0.1:${port}/v1`;
-      child=spawn(file,runtimeArgs({modelPath,context,gpuLayers:embedding?'auto':layers,device,port,key,embedding,options,modelInfo}),{shell:false,windowsHide:true,cwd:path.dirname(file),stdio:['ignore','pipe','pipe'],env:{...process.env}});
-      accessKey=key;const current=child;status={...status,running:true,preparing:false,stage:'Загрузка модели',device,url,modelPath,modelInfo,context,effectiveOptions:embedding?{batchSize:context,ubatchSize:context}:options,moeAutoApplied:!embedding&&resolved.autoApplied,recommendation:!embedding&&modelInfo.isMoe?recommendation:undefined,progress:undefined};
+      const launchArgs=runtimeArgs({modelPath,context,gpuLayers:embedding?'auto':layers,device,port,key,embedding,options,modelInfo});
+      launchArgs[launchArgs.indexOf('-m')+1]=compatible.modelPath;
+      child=spawn(file,launchArgs,{shell:false,windowsHide:true,cwd:path.dirname(file),stdio:['ignore','pipe','pipe'],env:{...process.env}});
+      accessKey=key;const current=child;status={...status,running:true,preparing:false,stage:'Загрузка модели',device,url,modelPath,modelInfo,context,effectiveOptions:embedding?{batchSize:context,ubatchSize:context}:options,moeAutoApplied:!embedding&&resolved.autoApplied,recommendation:!embedding&&modelInfo.isMoe?recommendation:undefined,progress:undefined,compatibility:compatible.compatibility};
       const log=chunk=>{status.logs=[...status.logs,...chunk.toString('utf8').replaceAll(key,'[redacted]').split(/\r?\n/).filter(Boolean)].slice(-60).map(s=>s.slice(0,2000));};
       current.stdout.on('data',log);current.stderr.on('data',log);
       current.on('error',error=>{if(child===current){status.error=error.message;status.running=false;status.ready=false;child=null;}});
-      current.on('exit',(code,reason)=>{if(child===current){child=null;accessKey='';status.running=false;status.ready=false;if(code&&!signal.aborted)status.error=`Модель завершилась с кодом ${code}. Попробуйте уменьшить контекст или число слоёв на GPU. Подробности в журнале.`;setSecret(connectionId,'');}});
+      current.on('exit',(code,reason)=>{if(child===current){child=null;accessKey='';status.running=false;status.ready=false;if(code&&!signal.aborted)status.error=modelLoadError(status.logs,code);setSecret(connectionId,'');}});
       const deadline=Date.now()+300000;
       while(child===current&&Date.now()<deadline){
         signal.throwIfAborted();

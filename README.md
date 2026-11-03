@@ -6,18 +6,22 @@
 
 **Персонажи, фанфики и совместные приключения с языковыми моделями.**
 
-[![Скачать SAS 0.9.10](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v0.9.10-9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/tag/v0.9.10)
+[![Скачать SAS 0.9.11](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v0.9.11-9976e8)](https://github.com/Padparaja-Ge/Super-AI-Story/releases/tag/v0.9.11)
 [![License](https://img.shields.io/badge/Код-Apache--2.0-blue)](LICENSE)
 ![Windows](https://img.shields.io/badge/Приложение-Windows%2010%2F11%20x64-0078d4)
 ![Stack](https://img.shields.io/badge/React-TypeScript%20%7C%20Node.js%20%7C%20Electron-32b8a5)
 
-[Скачать SAS 0.9.10 для Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.10/SAS-Windows-0.9.10.zip) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
+[Скачать SAS 0.9.11 для Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.11/SAS-Windows-0.9.11.zip) · [Руководство](docs/USER-GUIDE.md) · [Запуск и сборка](docs/BUILDING.md) · [Расширения](docs/EXTENSIONS-API.md) · [Сообщить о проблеме](https://github.com/Padparaja-Ge/Super-AI-Story/issues)
 
 </div>
 
-SAS — локальная русскоязычная студия для ролевых историй. Она объединяет карточки персонажей, персоны игроков, знания о мире, память, иллюстрации и озвучку. Можно использовать собственную GGUF-модель, подключить совместимый API или играть с друзьями через веб-интерфейс.
+[Русский](README.md) · [English](docs/README.en.md) · [日本語](docs/README.ja.md) · [简体中文](docs/README.zh-CN.md) · [한국어](docs/README.ko.md)
+
+SAS — локальная студия для ролевых историй с интерфейсом на русском, английском, японском, китайском и корейском языках. Она объединяет карточки персонажей, персоны игроков, знания о мире, память, иллюстрации и озвучку. Можно использовать собственную GGUF-модель, подключить совместимый API или играть с друзьями через веб-интерфейс.
 
 **В этом репозитории находятся полные исходники приложения:** React-интерфейс в `src/`, Node.js-сервер в `server/`, общие модели данных в `shared/`, оболочка Electron в `electron/`, тесты и сценарии сборки. Готовые программы распространяются в [Releases](https://github.com/Padparaja-Ge/Super-AI-Story/releases).
+
+Выберите язык в настройках или при первом знакомстве с программой. [Языки интерфейса](docs/LOCALIZATION.md).
 
 ## Возможности
 
@@ -43,11 +47,11 @@ SAS — локальная русскоязычная студия для рол
 Для готового Windows-пакета Node.js и сборка не нужны.
 
 1. Откройте [последний выпуск](https://github.com/Padparaja-Ge/Super-AI-Story/releases/latest).
-2. Скачайте **SAS-Windows-0.9.10.zip**, распакуйте в отдельную папку, например `D:\SAS`.
+2. Скачайте **SAS-Windows-0.9.11.zip**, распакуйте в отдельную папку, например `D:\SAS`.
 3. Запустите **SAS.exe**. Папки `app/` и `engines/` должны оставаться рядом с ним.
 4. В **Настройки → Модели и API** выберите свою GGUF-модель или подключение к API.
 
-Небольшой **SAS-Start-0.9.10.zip** позволяет установить тот же пакет через `Start-SAS.cmd`. Полный архив подходит для установки без сети. Для локальной работы заранее установите нужные модели; облачные API, переводчики и загрузки требуют интернета.
+Небольшой **SAS-Start-0.9.11.zip** позволяет установить тот же пакет через `Start-SAS.cmd`. Полный архив подходит для установки без сети. Для локальной работы заранее установите нужные модели; облачные API, переводчики и загрузки требуют интернета.
 
 В готовой поставке `Start-SAS-Web.cmd` запускает веб-сервер и открывает браузер. Enter закрывает консоль, оставляя сервер в фоне; `Stop-SAS-Web.cmd` завершает его работу. `Repair-SAS.cmd` проверяет и восстанавливает файлы.
 
@@ -95,11 +99,11 @@ npm run package:app
 Для полного Windows-пакета сначала подготовьте локальные компоненты. Можно взять их из проверенного готового ZIP:
 
 ```sh
-npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.10.zip"
+npm run prepare:runtime -- --archive "D:\Downloads\SAS-Windows-0.9.11.zip"
 npm run package:win
 ```
 
-Результат: `release/0.9.10/`. Сценарии не загружают модели автоматически. Подготовка без готового ZIP, состав пакета и команды упаковки веб-версии описаны в [BUILDING.md](docs/BUILDING.md).
+Результат: `release/0.9.11/`. Сценарии не загружают модели автоматически. Подготовка без готового ZIP, состав пакета и команды упаковки веб-версии описаны в [BUILDING.md](docs/BUILDING.md).
 
 ## Структура проекта
 

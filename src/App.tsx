@@ -1,3 +1,4 @@
+import {t} from './i18n';
 import {FanficView} from './Fanfic';
 import {StorybooksView} from './Storybooks';
 import { useEffect, useRef, useState } from 'react';
@@ -22,6 +23,7 @@ import {BeginnerGuide,openBeginnerGuide,flushGuidePreferences} from './BeginnerG
 import {CircleHelp} from 'lucide-react';
 import {useFrontendDiagnostics} from './Diagnostics';
 import {AutosaveIndicator} from './AutosaveSettings';
+import {flushInterfaceLanguage} from './i18n';
 const navigation = [{id:'fanfic',label:'Фанфик',icon:BookOpen},{id:'chat',label:'Истории',icon:MessageSquare},{id:'characters',label:'Персонажи',icon:UsersRound},{id:'personas',label:'Персоны',icon:UsersRound},{id:'wizard',label:'AI-мастер',icon:Orbit},{id:'lore',label:'Лорбуки',icon:BookOpen},{id:'storybooks',label:'Story books',icon:BookOpen},{id:'memory',label:'Память',icon:Brain},{id:'plugins',label:'Расширения',icon:Puzzle},{id:'multiplayer',label:'Мультиплеер',icon:Radio},{id:'technical',label:'Настройки',icon:Settings2}] as const;
 
 export default function App() {
@@ -73,7 +75,7 @@ export default function App() {
     await queue.current;
   };
   useEffect(()=>{
-    const prepare=(event:Event)=>{const callbacks=(event as CustomEvent<{resolve:()=>void;reject:(reason:Error)=>void}>).detail;if(callbacks&&typeof callbacks.resolve==='function'&&typeof callbacks.reject==='function')void flush().then(()=>flushGuidePreferences()).then(callbacks.resolve,callbacks.reject);};
+    const prepare=(event:Event)=>{const callbacks=(event as CustomEvent<{resolve:()=>void;reject:(reason:Error)=>void}>).detail;if(callbacks&&typeof callbacks.resolve==='function'&&typeof callbacks.reject==='function')void flush().then(()=>flushGuidePreferences()).then(()=>flushInterfaceLanguage()).then(callbacks.resolve,callbacks.reject);};
     window.addEventListener('sas:prepare-close',prepare);
     return()=>window.removeEventListener('sas:prepare-close',prepare);
   },[]);
@@ -97,27 +99,27 @@ export default function App() {
     if(!character){navigate('characters');return;}
     const id=uid();update(s=>{s.chats.unshift({id,title:character.name,characterId:character.id,personaId:String(character.personaId||''),scene:{location:'',time:'',weather:'',notes:'',stats:[],autoUpdate:true},memorySettings:{memoryMode:state.settings.memoryMode,historyLimit:state.settings.historyLimit,loreBudget:state.settings.loreBudget,scanDepth:state.settings.scanDepth},messages:character.firstMessage?[{id:uid(),role:'assistant',content:character.firstMessage,createdAt:new Date().toISOString()}]:[],summary:'',memory:[],createdAt:new Date().toISOString()});});setChatId(id);navigate('chat');
   };
-  if(!state) return <div className="boot"><Orbit size={46}/><h1>Super AI Story</h1>{loadError?<><p>{loadError}</p><Button primary onClick={()=>{setLoadError('');refresh().catch(e=>setLoadError(e.message));}}>Повторить подключение</Button></>:<><Spinner/><p>Открываем вашу студию…</p></>}</div>;
+  if(!state) return <div className="boot"><Orbit size={46}/><h1>Super AI Story</h1>{loadError?<><p>{t(loadError)}</p><Button primary onClick={()=>{setLoadError('');refresh().catch(e=>setLoadError(e.message));}}>{t("Повторить подключение")}</Button></>:<><Spinner/><p>{t("Открываем вашу студию…")}</p></>}</div>;
   const props: StudioProps={state,update,refresh,flush,notify,task};
   const activeConnection=state.connections.find(c=>c.id===state.activeConnectionId);
   const roomTask=!!task&&['multiplayer','room-summary','battlemap'].includes(task.kind);
   const chat=state.chats.find(c=>c.id===chatId)||state.chats[0];
   const character=state.characters.find(c=>c.id===chat?.characterId);
   return <div className={`app ${collapsed?'sidebar-collapsed':''}`}>
-    {!collapsed&&<button className="sidebar-backdrop" aria-label="Закрыть меню" onClick={()=>setCollapsed(true)}/>}
+    {!collapsed&&<button className="sidebar-backdrop" aria-label={t("Закрыть меню")} onClick={()=>setCollapsed(true)}/>}
     <aside className="sidebar" onKeyDown={e=>{if(e.key==='Escape')setCollapsed(true);}}>
-      <button className="brand" onClick={()=>navigate('chat')}><span className="brand-icon"><img src="/brand/sas-symbol.png" alt="Логотип SAS"/></span><span className="brand-copy"><strong>SAS<span className="brand-dot">.</span></strong><small>SUPER AI STORY</small></span><span className="version">α</span></button>
-      <Button primary className="new-story" onClick={()=>newChat()}><Plus size={18}/><span>Новая история</span></Button>
-      <div className="nav-caption">ВАША СТУДИЯ</div>
-      <nav>{navigation.map(item=><button title={item.label} key={item.id} className={`nav-item ${view===item.id||item.id==='technical'&&['models','appearance'].includes(view)?'active':''}`} onClick={()=>navigate(item.id)}><item.icon size={19}/><span>{item.label}</span>{item.id==='multiplayer'&&<span className="nav-badge">LAN</span>}</button>)}{extensions.pages.map(page=><button title={page.title} key={page.key} className={'nav-item '+(view==='extension:'+page.key?'active':'')} onClick={()=>navigate(('extension:'+page.key) as View)}><Puzzle size={19}/><span>{page.title}</span></button>)}</nav><ExtensionSlot name="sidebar"/>
-      <div className="recent-header"><span>НЕДАВНИЕ ИСТОРИИ</span><span>{state.chats.length}</span></div>
-      <label className="sidebar-search"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Найти историю…" aria-label="Найти историю"/></label>
+      <button className="brand" onClick={()=>navigate('chat')}><span className="brand-icon"><img src="/brand/sas-symbol.png" alt={t("Логотип SAS")}/></span><span className="brand-copy"><strong>SAS<span className="brand-dot">.</span></strong><small>SUPER AI STORY</small></span><span className="version">α</span></button>
+      <Button primary className="new-story" onClick={()=>newChat()}><Plus size={18}/><span>{t("Новая история")}</span></Button>
+      <div className="nav-caption">{t("ВАША СТУДИЯ")}</div>
+      <nav>{navigation.map(item=><button title={t(item.label)} key={item.id} className={`nav-item ${view===item.id||item.id==='technical'&&['models','appearance'].includes(view)?'active':''}`} onClick={()=>navigate(item.id)}><item.icon size={19}/><span>{t(item.label)}</span>{item.id==='multiplayer'&&<span className="nav-badge">LAN</span>}</button>)}{extensions.pages.map(page=><button title={page.title} key={page.key} className={'nav-item '+(view==='extension:'+page.key?'active':'')} onClick={()=>navigate(('extension:'+page.key) as View)}><Puzzle size={19}/><span>{page.title}</span></button>)}</nav><ExtensionSlot name="sidebar"/>
+      <div className="recent-header"><span>{t("НЕДАВНИЕ ИСТОРИИ")}</span><span>{state.chats.length}</span></div>
+      <label className="sidebar-search"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={t("Найти историю…")} aria-label={t("Найти историю")}/></label>
       <div className="recent-list">{state.chats.filter(c=>c.title.toLowerCase().includes(query.toLowerCase())).map(c=><button key={c.id} className={`recent-item ${view==='chat'&&c.id===chat?.id?'selected':''}`} onClick={()=>{setChatId(c.id);navigate('chat');}}><span className="recent-dot"/><span>{c.title}</span></button>)}</div>
-      <div className="sidebar-bottom"><button className={`nav-item ${view==='settings'?'active':''}`} onClick={()=>navigate('settings')}><Settings2 size={18}/><span>Настройки студии</span></button><div className="user-card"><div className="user-monogram">{state.settings.userName.charAt(0)}</div><div><strong>{state.settings.userName}</strong><small><span className="status-dot"/>Локальное пространство</small></div><IconButton title="Свернуть меню" onClick={()=>setCollapsed(true)}><PanelLeftClose size={17}/></IconButton></div></div>
+      <div className="sidebar-bottom"><button className={`nav-item ${view==='settings'?'active':''}`} onClick={()=>navigate('settings')}><Settings2 size={18}/><span>{t("Настройки студии")}</span></button><div className="user-card"><div className="user-monogram">{state.settings.userName.charAt(0)}</div><div><strong>{state.settings.userName}</strong><small><span className="status-dot"/>{t("Локальное пространство")}</small></div><IconButton title={t("Свернуть меню")} onClick={()=>setCollapsed(true)}><PanelLeftClose size={17}/></IconButton></div></div>
     </aside>
-    <div className="main-area"><header className="topbar"><div className="breadcrumb">{collapsed&&<IconButton title="Открыть меню" onClick={()=>setCollapsed(false)}><PanelLeftOpen size={20}/></IconButton>}<span>Студия</span><ChevronRight size={14}/><strong>{view==='settings'?'Настройки студии':view==='models'?'Модели и API':view==='appearance'?'Внешний вид':navigation.find(n=>n.id===view)?.label||extensions.pages.find(p=>'extension:'+p.key===view)?.title}</strong></div><div className="topbar-right"><button type="button" className="topbar-guide" title="Первые шаги в SAS" aria-label="Открыть обучение" onClick={openBeginnerGuide}><CircleHelp size={18}/></button><ExtensionSlot name="topbar"/><AutosaveIndicator flush={flush} notify={notify}/>{saveStatus==='Правка не сохранена'&&<span className="save-status error-text" role="status">{saveStatus}</span>}<button className="connection-pill" onClick={()=>navigate('models')}><span className={`status-dot ${activeConnection?.model?'configured':'offline'}`}/><span>{activeConnection?.model?activeConnection.model:'Модель не выбрана'}</span><ChevronRight size={14}/></button></div></header>
+    <div className="main-area"><header className="topbar"><div className="breadcrumb">{collapsed&&<IconButton title={t("Открыть меню")} onClick={()=>setCollapsed(false)}><PanelLeftOpen size={20}/></IconButton>}<span>{t("Студия")}</span><ChevronRight size={14}/><strong>{view==='settings'?t('Настройки студии'):view==='models'?t('Модели и API'):view==='appearance'?t('Внешний вид'):t(navigation.find(n=>n.id===view)?.label)||extensions.pages.find(p=>'extension:'+p.key===view)?.title}</strong></div><div className="topbar-right"><button type="button" className="topbar-guide" title={t("Первые шаги в SAS")} aria-label={t("Открыть обучение")} onClick={openBeginnerGuide}><CircleHelp size={18}/></button><ExtensionSlot name="topbar"/><AutosaveIndicator flush={flush} notify={notify}/>{saveStatus==='Правка не сохранена'&&<span className="save-status error-text" role="status">{t(saveStatus)}</span>}<button className="connection-pill" onClick={()=>navigate('models')}><span className={`status-dot ${activeConnection?.model?'configured':'offline'}`}/><span>{activeConnection?.model?activeConnection.model:t('Модель не выбрана')}</span><ChevronRight size={14}/></button></div></header>
     <ExtensionSlot name="workspace-top"/>{view.startsWith('extension:')&&<ExtensionPage view={view}/>}
-    {task?.status==='running'&&<div className="generation-bar" role="status"><Spinner/><button onClick={()=>{if(task.fanficProjectId){localStorage.setItem('sas-fanfic-project',task.fanficProjectId);localStorage.setItem('sas-fanfic-episode',task.episodeId||'');navigate('fanfic');window.dispatchEvent(new CustomEvent('sas-fanfic-open',{detail:{projectId:task.fanficProjectId,episodeId:task.episodeId}}));}else if(task.kind==='wizard')navigate('wizard');else if(roomTask)navigate('multiplayer');else if(task.chatId){setChatId(task.chatId);navigate('chat');}}}>{task.stage} · {state.fanficProjects.find(p=>p.id===task.fanficProjectId)?.title||state.chats.find(c=>c.id===task.chatId)?.title||(roomTask?'Мультиплеер':'Студия')}</button><span>Генерация продолжается при смене вкладки</span><Button onClick={()=>api('/tasks/stop',{}).catch(e=>notify(e.message,true))}>Остановить</Button></div>}
+    {task?.status==='running'&&<div className="generation-bar" role="status"><Spinner/><button onClick={()=>{if(task.fanficProjectId){localStorage.setItem('sas-fanfic-project',task.fanficProjectId);localStorage.setItem('sas-fanfic-episode',task.episodeId||'');navigate('fanfic');window.dispatchEvent(new CustomEvent('sas-fanfic-open',{detail:{projectId:task.fanficProjectId,episodeId:task.episodeId}}));}else if(task.kind==='wizard')navigate('wizard');else if(roomTask)navigate('multiplayer');else if(task.chatId){setChatId(task.chatId);navigate('chat');}}}>{t(task.stage)} · {state.fanficProjects.find(p=>p.id===task.fanficProjectId)?.title||state.chats.find(c=>c.id===task.chatId)?.title||(roomTask?'Мультиплеер':'Студия')}</button><span>{t("Генерация продолжается при смене вкладки")}</span><Button onClick={()=>api('/tasks/stop',{}).catch(e=>notify(e.message,true))}>{t("Остановить")}</Button></div>}
     {view==='fanfic'&&<FanficView {...props}/>}
     {view==='wizard'&&<WizardView {...props}/>}
     {view==='chat'&&<ChatView {...props} chat={chat} character={character} onNewChat={newChat} onSelectChat={setChatId} navigate={navigate}/>}
@@ -132,7 +134,7 @@ export default function App() {
     {view==='technical'&&<TechnicalSettings {...props} navigate={navigate}/>}
     {view==='settings'&&<SettingsView {...props} chat={chat} onSelectChat={setChatId}/>}{['settings','technical'].includes(view)&&<ExtensionSlot name="settings"/>}<ExtensionSlot name="workspace-bottom"/>
     </div>
-    {toast&&<div className={`toast ${toast.error?'toast-error':''}`} role="status">{toast.error?<AlertCircle size={19}/>:<Check size={19}/>}<span>{toast.message}</span><IconButton title="Скрыть уведомление" onClick={()=>setToast(null)}><X size={16}/></IconButton></div>}
+    {toast&&<div className={`toast ${toast.error?'toast-error':''}`} role="status">{toast.error?<AlertCircle size={19}/>:<Check size={19}/>}<span>{t(toast.message)}</span><IconButton title={t("Скрыть уведомление")} onClick={()=>setToast(null)}><X size={16}/></IconButton></div>}
     <BeginnerGuide busy={task?.status==='running'} navigate={navigate}/>
   </div>;
 }

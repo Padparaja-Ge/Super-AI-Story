@@ -258,7 +258,7 @@ export function createIntegrationRouter({getState, saveState, getSecret = () => 
       const entries = await fs.readdir(directory, {withFileTypes:true}).catch(() => []);
       for (const entry of entries) {
         const absolute = path.join(directory, entry.name);
-        if (entry.isSymbolicLink()) continue;
+        if (entry.isSymbolicLink()||entry.name==='.sas-compat') continue;
         if (entry.isDirectory()) await scan(absolute, depth + 1);
         else if (entry.isFile() && /\.gguf$/i.test(entry.name)) {
           const stat = await fs.stat(absolute).catch(() => null);
@@ -310,7 +310,7 @@ export function createIntegrationRouter({getState, saveState, getSecret = () => 
       if(depth>4||added.length>=1000)return;
       for(const entry of await fs.readdir(dir,{withFileTypes:true})){
         if(added.length>=1000)break;
-        if(entry.isSymbolicLink())continue;
+        if(entry.isSymbolicLink()||entry.name==='.sas-compat')continue;
         const target=path.join(dir,entry.name);
         if(entry.isDirectory())await scan(target,depth+1);
         else if(entry.isFile()&&/\.gguf$/i.test(entry.name)&&(!/-\d{5}-of-\d{5}\.gguf$/i.test(entry.name)||/-00001-of-\d{5}\.gguf$/i.test(entry.name))){await assertGguf(target);added.push(target);}

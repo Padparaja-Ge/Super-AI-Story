@@ -46,7 +46,7 @@ export function createSpeechService({dataDir,getState,saveState,getModelsDir,run
    await fs.writeFile(temporary,JSON.stringify(value,null,2));
    for(let attempt=0;;attempt++){
     try{await fs.rename(temporary,registryPath);break;}
-    catch(e){if(!['EPERM','EBUSY'].includes(e.code)||attempt>=6)throw e;await new Promise(resolve=>setTimeout(resolve,Math.min(400,20*2**attempt)));}
+    catch(e){if(!['EPERM','EBUSY'].includes(e.code)||attempt>=10)throw e;await new Promise(resolve=>setTimeout(resolve,Math.min(500,20*2**attempt)));}
    }
   }catch(e){await fs.unlink(temporary).catch(()=>{});throw e;}
  }

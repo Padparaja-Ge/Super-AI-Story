@@ -5,6 +5,9 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {releaseNetworkConfig} from './release-config.mjs';
 const root=path.resolve(import.meta.dirname,'..'),require=createRequire(import.meta.url),version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
+const repository=process.env.SAS_RELEASE_REPOSITORY||'Padparaja-Ge/Super-AI-Story';
+if(!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository))throw Error('Invalid release repository');
+async function copyDistribution(file,destination){let content=await fs.readFile(path.join(root,'distribution',file));if(file==='Install-SAS.ps1'||file==='README.md')content=Buffer.from(content.toString('utf8').replaceAll('Padparaja-Ge/Super-AI-Story',repository));await fs.writeFile(path.join(destination,file),content);}
 const output=path.join(root,'release',version),runtime=path.join(output,'windows'),repo=path.join(output,'installer');
 const files=['LICENSE','NOTICE','README.md','COPYRIGHT.md','THIRD-PARTY.md','Install-SAS.ps1','web-server.json','Start-SAS.cmd','Start-SAS-Web.cmd','Start-SAS-Web-Shell.cmd','Stop-SAS-Web.cmd','Repair-SAS.cmd','release-manifest.json'];
 await fs.mkdir(repo,{recursive:true});
@@ -15,15 +18,15 @@ const payload=[];
 async function visit(dir){for(const e of await fs.readdir(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isSymbolicLink())throw Error('Unexpected release link');if(e.isDirectory())await visit(p);else{const rel=path.relative(runtime,p).replaceAll('\\','/');if(!/^(SAS\.exe|app\/|engines\/)/.test(rel))continue;payload.push({path:rel,size:(await fs.stat(p)).size,sha256:await digest(p),critical:rel==='SAS.exe'||rel==='app/SAS.exe'||rel==='app/resources/app.asar'||/^app\/[^/]+\.dll$/.test(rel)||/llama-server\.exe$|silero-cpu\/python\.exe$|models\/silero\/.*\.pt$/.test(rel)});}}}
 await visit(runtime);payload.sort((a,b)=>a.path.localeCompare(b.path));
 if(payload.some(f=>/kokoro|node_modules\/onnxruntime|espeak|phonemes\.mjs/i.test(f.path)))throw Error('Unexpected optional speech components in bundled runtime');
-const base={format:2,repository:'Padparaja-Ge/Super-AI-Story',version,files:payload};
+const base={format:2,repository,version,files:payload};
 await fs.writeFile(path.join(runtime,'.sas-payload.json'),JSON.stringify(base)+'\n');
-for(const file of files.filter(f=>f!=='release-manifest.json'))await fs.copyFile(path.join(root,'distribution',file),path.join(runtime,file));
+for(const file of files.filter(f=>f!=='release-manifest.json'))await copyDistribution(file,runtime);
 const archiver=require('archiver');
 async function zip(name,folder,selected){const file=path.join(output,name),stream=createWriteStream(file),a=archiver('zip',{zlib:{level:6}});const done=new Promise((resolve,reject)=>{stream.once('close',resolve);stream.once('error',reject);a.once('error',reject);});a.pipe(stream);if(selected)for(const f of selected)a.file(path.join(folder,f),{name:f});else a.directory(folder,false);await a.finalize();await done;const size=(await fs.stat(file)).size;if(size>=2**31)throw Error('GitHub asset exceeds 2 GiB');return {name,path:file,size,sha256:await digest(file)};}
 const full=await zip('SAS-Windows-'+version+'.zip',runtime);
 const manifest={...base,asset:full.name,size:full.size,sha256:full.sha256};
 await fs.writeFile(path.join(root,'distribution/release-manifest.json'),JSON.stringify(manifest)+'\n');
-for(const file of files)await fs.copyFile(path.join(root,'distribution',file),path.join(repo,file));
+for(const file of files)await copyDistribution(file,repo);
 const extra=(await fs.readdir(repo)).filter(f=>f!=='.git'&&!files.includes(f));if(extra.length)throw Error('Unexpected installer files '+extra);
 const starter=await zip('SAS-Start-'+version+'.zip',repo,files);
 const webLauncher=await zip('SAS-Web-Launcher.zip',repo,['Install-SAS.ps1','Start-SAS-Web.cmd','Start-SAS-Web-Shell.cmd']);

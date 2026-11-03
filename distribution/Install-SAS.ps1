@@ -147,7 +147,13 @@ function Invoke-SasInstaller([string]$Directory,[string]$Mode) {
         do {
             if(Test-Path -LiteralPath $status){try{$ready=Get-Content -LiteralPath $status -Raw -Encoding UTF8|ConvertFrom-Json}catch{} }
             if($ready){Show-SasProgress $ready.progress;if($ready.complete){break}}
-            if($process.HasExited){throw 'SAS stopped before reporting readiness.'}
+            if($process.HasExited){
+                # A reused web process can report readiness and exit between polls.
+                # Read its final status after exit before treating it as a failure.
+                if(Test-Path -LiteralPath $status){try{$ready=Get-Content -LiteralPath $status -Raw -Encoding UTF8|ConvertFrom-Json}catch{} }
+                if($ready -and $ready.complete){break}
+                throw 'SAS stopped before reporting readiness.'
+            }
             Start-Sleep -Milliseconds 150
         }while([DateTime]::UtcNow -lt $deadline)
         Write-Host ''

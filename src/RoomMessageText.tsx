@@ -1,3 +1,4 @@
+import {t} from './i18n';
 import {useEffect,useRef,useState} from 'react';
 import {api} from './api';
 import {Button,TextContent} from './UI';
@@ -12,5 +13,5 @@ export function RoomMessageText({message,settings,automatic=false,generating=fal
  useEffect(()=>{requestId.current++;setBusy(false);setTranslation(cache.get(key)||'');setOriginal(false);setError('');},[key]);
  const request=async()=>{if(!canTranslate||busy)return;const id=++requestId.current;setBusy(true);setError('');try{const result=await translate(key,{text,sourceLang:source,targetLang:target,provider});if(mounted.current&&currentKey.current===key&&requestId.current===id){setTranslation(result);setOriginal(false);}}catch(e:any){if(mounted.current&&currentKey.current===key&&requestId.current===id)setError(e.message);}finally{if(mounted.current&&requestId.current===id)setBusy(false);}};
  useEffect(()=>{if(!busy&&automatic&&settings?.enabled&&settings?.incoming&&message.role==='assistant'&&!generating&&canTranslate&&autoKey.current!==key){autoKey.current=key;void request();}},[key,automatic,generating,busy,settings?.enabled,settings?.incoming]);
- return <><TextContent text={translation&&!original?translation:text}/>{canTranslate&&<div className="room-translation-tools">{translation?<Button onClick={()=>setOriginal(!original)}>{original?'Перевод':'Оригинал'}</Button>:<Button disabled={busy||generating} onClick={()=>void request()}>{busy?'Переводится…':'Перевести'}</Button>}{error&&<small className="error-text" role="status">Перевод: {error}</small>}</div>}</>;
+ return <><TextContent text={translation&&!original?translation:text}/>{canTranslate&&<div className="room-translation-tools">{translation?<Button onClick={()=>setOriginal(!original)}>{original?t('Перевод'):t('Оригинал')}</Button>:<Button disabled={busy||generating} onClick={()=>void request()}>{busy?t('Переводится…'):t('Перевести')}</Button>}{error&&<small className="error-text" role="status">{t("Перевод: ")}{t(error)}</small>}</div>}</>;
 }

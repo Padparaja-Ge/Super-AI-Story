@@ -18,3 +18,4 @@
 .room-memory-sources{margin-top:14px;max-height:360px;overflow:auto;overflow-wrap:anywhere}.room-memory-sources blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:var(--surface-2);border-radius:0 8px 8px 0}.room-memory-sources small{color:var(--muted)}
 
 .message-interruption{margin-top:10px;color:var(--muted);font-size:12px}.message-actions>.btn{font-size:12px;padding:6px 10px}
+html:lang(ja){font-family:"Yu Gothic UI",Meiryo,sans-serif}html:lang(zh-CN){font-family:"Microsoft YaHei UI","Microsoft YaHei",sans-serif}html:lang(ko){font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif}

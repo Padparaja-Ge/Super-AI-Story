@@ -32,6 +32,7 @@ import {createDiagnostics} from './diagnostics.mjs';
 import {createRoomNetwork} from './room-network.mjs';
 import {createRoomDiscovery} from './room-discovery.mjs';
 import {createGuidePreferences} from './onboarding.mjs';
+import {createInterfaceLanguage} from './interface-language.mjs';
 
 const isLoopback = address => address === '::1' || /^127\./.test(address || '') || /^::ffff:127\./.test(address || '');
 
@@ -98,6 +99,9 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.use('/api/multiplayer/restore',express.json({limit:'65mb'}));
   app.use(express.json({ limit: '24mb' }));
   const guidePreferences=createGuidePreferences(store.dataDir||dataDir);
+  const interfaceLanguage=createInterfaceLanguage(store.dataDir||dataDir);
+  app.get('/api/interface-language',async(_req,res)=>res.json({language:await interfaceLanguage.read()}));
+  app.put('/api/interface-language',async(req,res)=>res.json({language:await interfaceLanguage.write(req.body)}));
   app.get('/api/onboarding',async(_req,res)=>res.json({preferences:await guidePreferences.read()}));
   app.put('/api/onboarding',async(req,res)=>res.json({preferences:await guidePreferences.write(req.body)}));
   app.use((req,res,next)=>{const started=Date.now();res.once('finish',()=>{if(res.statusCode>=400)diagnostics.record('http_failed',{method:req.method,route:req.route?.path||'unmatched',status:res.statusCode,durationMs:Date.now()-started});});next();});

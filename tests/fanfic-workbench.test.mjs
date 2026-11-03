@@ -12,7 +12,8 @@ const transpile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Sc
 const helperCode=transpile(helperSource).replaceAll('../shared/fanfic-profiles.mjs',new URL('../shared/fanfic-profiles.mjs',import.meta.url).href);
 const helperURL=url(helperCode),helpers=await import(helperURL);
 const {proposalState,episodeFactRecords,editableFact,factSavePayload,reviewIsCurrent,stageDisplay,profileUpdatePayload,rebaseMetadataDraft,resumableEpisode}=helpers;
-const bare=code=>code.replace(/from ["'](react(?:\/jsx-runtime)?|lucide-react)["']/g,(_,name)=>'from '+JSON.stringify(pathToFileURL(require.resolve(name)).href));
+const localizationURL=url('export const t=(text,values=[])=>typeof text===\'string\'?text.replace(/\\{(\\d+)\\}/g,(match,index)=>Number(index)<values.length?String(values[index]):match):text; export const uiLocale=()=>\'ru-RU\';');
+const bare=code=>code.replace(/from ["'](react(?:\/jsx-runtime)?|lucide-react)["']/g,(_,name)=>'from '+JSON.stringify(pathToFileURL(require.resolve(name)).href)).replace(/from ['"]\.\/i18n['"]/g,'from '+JSON.stringify(localizationURL));
 const moduleURL=async name=>url(bare(transpile(await fs.readFile(new URL('../src/'+name,import.meta.url),'utf8'))));
 const draftURL=await moduleURL('fanficDrafts.ts'),apiURL=await moduleURL('api.ts'),uiURL=await moduleURL('UI.tsx');
 const playerURL=url(bare(transpile(await fs.readFile(new URL('../src/speechPlayer.ts',import.meta.url),'utf8'))).replaceAll('../shared/speech.mjs',new URL('../shared/speech.mjs',import.meta.url).href));
