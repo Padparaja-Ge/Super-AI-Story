@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {normalizeGmSettings} from '../shared/gm-profile.mjs';
 import {messageTokens} from './prompt.mjs';
 import {countCompletionTokens} from './llm.mjs';
 import {calculateTokenBudget} from './rag/tokens.mjs';
@@ -19,7 +20,9 @@ export function publicRegeneration(room,state){
  return {messageId:record.messageId,canRegenerate:record.contextHash===narrationContextHash(room,record.messageId)&&record.referencesHash===narrationReferencesHash(state,room)};
 }
 export function narrationContextHash(room,messageId){
-  return hash({id:room.id,mode:room.mode,scene:room.scene,storybook:room.storybook,lorebookIds:room.lorebookIds,rulebookIds:room.rulebookIds,personas:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,canonicalPersona(p)])),
+  const settings=normalizeGmSettings(room.gmSettings);
+  const hasCustomSettings=settings.profile!=='standard'||settings.deathPolicy!=='classic';
+  return hash({id:room.id,mode:room.mode,...(hasCustomSettings?{gmSettings:settings}:{}),...(room.campaign?{campaign:room.campaign}:{}),scene:room.scene,storybook:room.storybook,lorebookIds:room.lorebookIds,rulebookIds:room.rulebookIds,personas:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,canonicalPersona(p)])),
     messages:(room.messages||[]).filter(m=>m.id!==messageId&&m.kind!=='image').map(m=>({id:m.id,content:m.content,role:m.role})),
     game:room.tactical&&{order:room.tactical.order,turn:room.tactical.turn,initiativeScores:room.tactical.initiativeScores,initiativeTies:room.tactical.initiativeTies,gmPendingNext:room.tactical.gmPendingNext,round:room.tactical.round,phase:room.tactical.phase,inCombat:room.tactical.inCombat,log:room.tactical.log,gmProcessed:room.tactical.gmProcessed,challenges:room.tactical.challenges,checkSubjects:room.tactical.checkSubjects,narratedEventIds:room.tactical.narratedEventIds,actors:(room.tactical.actors||[]).map(canonicalActor),rules:room.tactical.rules,map:canonicalMap(room.tactical.map)}});
 }
@@ -43,22 +46,35 @@ const crop=(text,limit)=>text.length<=limit?text:text.slice(0,Math.floor(limit*.
 // compacted; the full generated draft remains in the persisted chat message.
 export async function fitNarrationPrompt(connection,secret,source,{text='',maxTokens,signal,adaptInstruction=false,priorityMessages=[],countTokens=countCompletionTokens,instruction=continuationInstruction,gameBudget=false}={}){
   const priority=priorityMessages.filter(m=>m.content?.trim()).map(m=>({role:m.role,content:String(m.content)})),references=source.map(m=>({role:m.role,content:String(m.content||'')}));
+  const optionalReferences=references.filter((_,index)=>source[index].optional===true&&!source[index].important);
+  const houseRules=references.filter((_,index)=>source[index].optional===true&&source[index].important);
   const messages=[...priority.filter(m=>m.role==='system'),...references,...priority.filter(m=>m.role!=='system')],protectedMessages=new Set(priority);
-  const window=Math.max(256,Number(connection.contextWindow)||8192),output=Math.max(32,Math.min(Number(maxTokens)||Number(connection.maxTokens)||1024,Math.floor(window/2))),available=window-output-32;
+  const window=Math.max(256,Number(connection.contextWindow)||8192);
+  const output=Math.max(32,Math.min(Number(maxTokens)||Number(connection.maxTokens)||1024,Math.floor(window/2))),available=window-output-32;
   if(text){const lastInstruction={role:'user',content:instruction};messages.push({role:'assistant',content:text.slice(-Math.max(400,Math.floor(available*.4)*3))},lastInstruction);protectedMessages.add(lastInstruction);}
   let actual=null;
   for(let attempt=0;attempt<12;attempt++){
     signal?.throwIfAborted();const active=messages.filter(m=>m.content),estimated=gameBudget?3+active.reduce((n,m)=>n+calculateTokenBudget(m.content)+8,0):messageTokens(active);
-    if(estimated<=available||gameBudget){actual=await countTokens(connection,secret,active,{signal,adaptInstruction});if((actual??estimated)<=available)return {messages:active,maxTokens:output,estimatedTokens:estimated,actualTokens:actual};}
-    const size=actual??estimated,ratio=Math.max(.3,Math.min(.85,available/Math.max(1,size)*.9));
+    if(estimated<=available||gameBudget)actual=await countTokens(connection,secret,active,{signal,adaptInstruction});
+    const reserve=gameBudget&&connection.id==='sas-local'&&actual===null?128:32,limit=window-output-reserve;
+    const size=actual??estimated;
+    if(size<=limit)return {messages:active,maxTokens:output,estimatedTokens:estimated,actualTokens:actual};
+    const ratio=Math.max(.3,Math.min(.85,limit/Math.max(1,size)*.9));
     let changed=false;
     if(gameBudget){
       // Never crop an instruction or a JSON state to fit references. Discard
       // complete lowest-ranked RAG records before considering continuation text.
       const rag=[...messages].reverse().find(m=>m.content.startsWith('[SAS_RAG_SOURCES]\n'));
+      const reference=optionalReferences.find(message=>message.content);
       if(rag){const lines=rag.content.split('\n');lines.pop();rag.content=lines.length>1?lines.join('\n'):'';changed=true;}
+      else if(reference){reference.content='';changed=true;}
       else if(text){const draft=messages.at(-2),target=Math.max(150,Math.floor(draft.content.length*ratio));if(target<draft.content.length){draft.content=draft.content.slice(-target);changed=true;}}
-      actual=null;if(changed)continue;break;
+      if(changed){actual=null;continue;}
+      const lowerOutput=window-size-reserve;
+      if(lowerOutput>=Math.min(output,160)&&lowerOutput<output)return {messages:active,maxTokens:lowerOutput,estimatedTokens:estimated,actualTokens:actual};
+      const rules=houseRules.find(message=>message.content);
+      if(rules){rules.content='';actual=null;continue;}
+      break;
     }
     for(let i=0;i<messages.length;i++){
       if(protectedMessages.has(messages[i]))continue;

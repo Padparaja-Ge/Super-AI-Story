@@ -20,12 +20,15 @@ export function compactChallenges(game,{keepId=''}={}){
  if(moved.length){const archive=new Map([...(game.challengeArchive||[]),...moved].map(c=>[c.id,c]));game.challengeArchive=[...archive.values()].slice(-2000);}
 }
 export function validateDieResult(value,sides=20){if(!Number.isInteger(sides)||sides<2||sides>100||!Number.isInteger(value)||value<1||value>sides)throw new Error('Некорректный бросок: кубик выдаёт только целые значения от 1 до числа граней.');return value;}
-export function resolveD20Outcome({roll,sides=20,modifier:bonus=0,dc,impossible=false,impossibleReason=''}){
+// `criticals` is the campaign house rule for this roll category. A disabled
+// category still reports naturalCritical (a fact about the die) but the result
+// is decided only by total versus difficulty.
+export function resolveD20Outcome({roll,sides=20,modifier:bonus=0,dc,impossible=false,impossibleReason='',criticals=true}){
  validateDieResult(roll,sides);if(!Number.isFinite(bonus)||!validDc(dc))throw new Error('Неверный модификатор или сложность проверки.');
- const total=roll+bonus,naturalCritical=sides===20?(roll===1?'failure':roll===20?'success':null):null;
+ const total=roll+bonus,naturalCritical=sides===20?(roll===1?'failure':roll===20?'success':null):null,critical=criticals===false?null:naturalCritical;
  if(impossible)return {die:sides,roll,total,dc,margin:total-dc,critical:null,naturalCritical,outcome:'impossible',success:false,reason:clean(impossibleReason,600)||'Действие невозможно в установленных условиях; результат кубика этого не меняет.'};
- const success=naturalCritical==='success'||naturalCritical!=='failure'&&total>=dc;
- return {die:sides,roll,total,dc,margin:total-dc,critical:naturalCritical,naturalCritical,outcome:success?'success':'failure',success,reason:naturalCritical==='success'?'Натуральная 20: критический успех.':naturalCritical==='failure'?'Натуральная 1: критический провал.':`${total} ${success?'≥':'<'} ${dc}: ${success?'успех':'неудача'}.`};
+ const success=critical==='success'||critical!=='failure'&&total>=dc;
+ return {die:sides,roll,total,dc,margin:total-dc,critical,naturalCritical,outcome:success?'success':'failure',success,reason:critical==='success'?'Натуральная 20: критический успех.':critical==='failure'?'Натуральная 1: критический провал.':`${total} ${success?'≥':'<'} ${dc}: ${success?'успех':'неудача'}.`};
 }
 export function normalizeCheckDifficulty(raw,{checkType='',defaultAbility=''}={}){
  if(!plain(raw))throw new Error('Неверные параметры сложности.');
@@ -89,7 +92,7 @@ export function resolveAbilityCheck(game,actor,request,{random,rollWithMode}){
  const context=resolveCheckTarget(game,actor,request),{challenge,target,ability,checkType,actionId,messageId,intent}=context;
  const stored=challenge?.results?.[actor.id]?.calculation,alreadyStored=stored?.actionId===actionId&&stored?.checkType===checkType||challenge?.lastActorId===actor.id&&challenge?.lastActionId===actionId&&!!challenge?.lastResultId;
  if(actionId&&(alreadyStored||[...(game.eventArchive||[]),...(game.log||[])].some(e=>e.calculation?.kind==='check'&&e.calculation.actorId===actor.id&&e.calculation.actionId===actionId&&e.calculation.checkType===checkType&&e.calculation.challengeId===(challenge?.id||''))))throw new Error('Проверка этого действия уже выполнена; ведущий должен назначить новую попытку.');
- const roll=rollWithMode(random,{disadvantage:!!actor.grappledBy,sides:game.rules.checkDie??20}),points=pointsOf(actor,ability),bonus=modifier(points),result=resolveD20Outcome({roll:roll.value,sides:game.rules.checkDie??20,modifier:bonus,...context});
+ const roll=rollWithMode(random,{disadvantage:!!actor.grappledBy,sides:game.rules.checkDie??20}),points=pointsOf(actor,ability),bonus=modifier(points),result=resolveD20Outcome({roll:roll.value,sides:game.rules.checkDie??20,modifier:bonus,...context,criticals:game.rules.critChecks!==false});
  const calculation={kind:'check',id:crypto.randomUUID(),actorId:actor.id,targetId:target?.id||'',challengeId:challenge?.id||'',checkType,attribute:ability,points,modifier:bonus,bonus:0,rolls:roll.rolls,mode:roll.mode,...result,unbound:context.unbound,actionId,messageId,intent};
  const label=challenge?.name||checkSkills.find(([key])=>key===checkType)?.[1]||abilityNames[ability];
  const text=`${actor.name}${target?' → '+target.name:''}: ${label}. 1д${result.die} [${roll.rolls.join(', ')}; ${roll.mode}, выбран ${roll.value}] ${bonus>=0?'+':'−'} ${abilityNames[ability]} ${Math.abs(bonus)} = ${result.total} против сложности ${result.dc}: ${result.reason}${context.unbound?' Обычная непривязанная проверка; не определяет исход другого действия.':''}`;

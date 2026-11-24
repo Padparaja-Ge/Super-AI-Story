@@ -43,6 +43,28 @@ test('A low-roll success contradiction is repaired once and must pass an indepen
  assert.equal(calls[1].maxTokens,400);assert.equal(calls[2].context.candidate,fixed);assert.equal(calls[1].context.violations[0].evidence,answer.violations[0].evidence);assert.deepEqual(snapshot(input),before);
 });
 
+test('A failed exact-price check rejects a conditional concession even when the semantic audit says valid',async()=>{
+ const input=fixture({roll:7}),calls=[];
+ const text='«Десять монет», — говорит Арвин. «Но я готов уступить... восемь, но только если покажешь знак».';
+ const fixed='Арвин качает головой: «Цена остаётся десять монет». Меч лежит на прилавке.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text:fixed},valid],calls)});
+ assert.equal(result.repaired,true);assert.equal(result.text,fixed);
+ assert.equal(calls[0].context.transactionLimits[0].priceOfferAuthorized,false);
+ assert.ok(calls[1].context.violations.some(({kind,evidence})=>kind==='outcome'&&evidence.includes('уступить... восемь')));
+ await assert.rejects(reviewGameNarration({...input,text,completion:mockCompletion([valid,{text},valid])}),e=>e.code==='GM_NARRATION_CONFLICT');
+});
+
+test('The exact-price guard leaves a refusal and the established price intact, and allows a successful price check',async()=>{
+ const claims=[{roll:7,text:'«Не готов уступить восемь монет. Цена десять», — отвечает Арвин.'},
+   {roll:7,text:'Арвин говорит: «Продам за десять монет».',},
+   {roll:20,text:'Арвин говорит: «Готов уступить... восемь монет».',}];
+ for(const {roll,text} of claims){
+  const calls=[],result=await reviewGameNarration({...fixture({roll}),text,completion:mockCompletion([valid],calls)});
+  assert.equal(result.repaired,false);assert.equal(result.text,text);
+  assert.equal(calls[0].context.transactionLimits[0].priceOfferAuthorized,roll===20);
+ }
+});
+
 test('Natural20 price agreement does not authorize the merchant to gift money or the weapon',async()=>{
  const input=fixture({roll:20}),calls=[],text='«За восемь монет», — говорит Арвин. Он протягивает мешочек монет. «Меч твой».',fixed='Арвин соглашается: «За восемь монет». Меч остаётся на прилавке, торговец ждёт решения.';
  const result=await reviewGameNarration({...input,text,completion:mockCompletion([violation('Он протягивает мешочек монет.','resource','Торг согласовал цену, а не подарок или оплату.'),{text:fixed},valid],calls)});
@@ -58,8 +80,11 @@ test('Still-conflicting repair raises a stable conflict error after three calls,
 test('Invented or empty evidence never authorizes a rewrite based on an ungrounded accusation',async()=>{
  for(const evidence of ['Герой получил подарок.','']){
   const input=fixture(),calls=[];
-  await assert.rejects(reviewGameNarration({...input,text:'Арвин отказывается снижать цену.',completion:mockCompletion([violation(evidence)],calls)}),error=>error.code==='GM_NARRATION_CONFLICT'&&/точной цитатой/.test(error.message));
-  assert.equal(calls.length,1);
+  const unsupported=violation(evidence);
+  await assert.rejects(reviewGameNarration({...input,text:'Арвин отказывается снижать цену.',completion:mockCompletion([unsupported,unsupported],calls)}),error=>error.code==='GM_NARRATION_CONFLICT'&&/точной цитатой/.test(error.message));
+  assert.equal(calls.length,2);
+  assert.ok(calls.every(call=>call.name==='gm_narration_audit'));
+  assert.ok(calls.every(call=>!call.context.violations));
  }
 });
 
@@ -169,4 +194,99 @@ for(const text of ['За восемь монет Арвин передал ме�
  const input=fixture({roll:20}),calls=[],fixed='Арвин соглашается на цену восемь монет. Меч остаётся на прилавке.';
  const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text:fixed},valid],calls)});
  assert.equal(result.repaired,true);assert.equal(calls.length,3);
+});
+
+test('A fresh grounded audit can pass after the checker paraphrased its evidence',async()=>{
+ const input=fixture(),calls=[],text='Арвин отказывается снижать цену.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([violation('Арвин отверг предложение.'),valid],calls)});
+ assert.deepEqual(result,{text,reviewed:true,repaired:false});
+ assert.equal(calls.length,2);assert.ok(calls.every(call=>call.name==='gm_narration_audit'&&call.context.candidate===text));
+});
+
+test('A successful price check rejects extra conditions but allows ordinary payment at the agreed price',async()=>{
+ const input=fixture({roll:20}),calls=[];
+ const text='«Восемь монет — разумная цена. Но я хочу услышать, что ты готов предложить взамен», — отвечает Арвин.';
+ const fixed='«Согласен на восемь монет. Если заплатишь восемь монет, я передам меч», — отвечает Арвин.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text:fixed},valid],calls)});
+ assert.equal(result.text,fixed);
+ assert.equal(result.repaired,true);
+ assert.match(calls[1].context.violations[0].evidence,/предложить взамен/);
+});
+
+test('Failure preserves the opening price when the merchant offers the same discount as a subtraction',async()=>{
+ const input=fixture({roll:7}),calls=[];
+ const intent='Прошу снизить цену меча с десяти до девяти монет.';
+ input.room.messages.find(message=>message.id==='current').content=intent;
+ for(const entry of [input.room.tactical.log,input.room.tactical.eventArchive]){
+  for(const event of entry||[])if(event.calculation?.kind==='check')event.calculation.intent=intent;
+ }
+ const text='«Если возьмёшь сегодня, я сниму одну монету», — отвечает Арвин.';
+ const refusal='«Цена десять монет. Одну монету я не сниму», — говорит Арвин.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text:refusal},valid],calls)});
+ assert.equal(result.text,refusal);
+ assert.equal(result.repaired,true);
+ assert.equal(calls[0].context.transactionLimits[0].requestedPrice,9);
+ assert.equal(calls[0].context.transactionLimits[0].statedStartingPrice,10);
+ assert.match(calls[1].context.violations[0].evidence,/сниму одну монету/);
+});
+
+test('Visible dice metadata is repaired using exact server evidence when the model audit is malformed',async()=>{
+ const input=fixture(),calls=[];
+ const text='«Натуральная 1? Критический провал!» — говорит Арвин. Он качает головой.';
+ const fixed='Арвин качает головой и оставляет прежнюю цену.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion(['{broken',{text:fixed},valid],calls)});
+ assert.equal(result.text,fixed);assert.equal(result.repaired,true);
+ assert.ok(calls[1].context.violations.every(({kind,evidence})=>kind==='metadata'&&text.includes(evidence)));
+ assert.equal(calls[2].context.candidate,fixed);
+ await assert.rejects(reviewGameNarration({...input,text,completion:mockCompletion(['{broken',{text},valid])}),error=>error.code==='GM_NARRATION_CONFLICT');
+});
+
+test('An exact single-player price check falls back to the authoritative offer after two contradictory drafts',async()=>{
+ const input=fixture({roll:20}),calls=[];
+ const intent='Прошу снизить цену меча с десяти до девяти монет.';
+ input.room.messages.find(message=>message.id==='current').content=intent;
+ for(const log of [input.room.tactical.log,input.room.tactical.eventArchive]){
+  for(const event of log||[])if(event.calculation?.kind==='check')event.calculation.intent=intent;
+ }
+ const text='«Девять монет пятьдесят», — отвечает Арвин.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text},valid],calls)});
+ assert.equal(result.repaired,true);
+ assert.match(result.text,/9 монет/);
+ assert.doesNotMatch(result.text,/оружие|пятьдесят|переда[лт]/);
+ assert.equal(calls.length,3);
+ const departure='Арвин подтверждает девять монет. Бог неспешно удалился.';
+ const stay=await reviewGameNarration({...input,text:departure,completion:mockCompletion([valid,{text:departure},valid])});
+ assert.match(stay.text,/9 монет/);
+ assert.doesNotMatch(stay.text,/удалился/);
+ assert.equal(stay.repaired,true);
+ const observed='Бог молча кивнул, понимая отказ. Он развернулся и направился прочь.';
+ const corrected=await reviewGameNarration({...input,text:observed,completion:mockCompletion([valid,{text:observed},valid])});
+ assert.match(corrected.text,/9 монет/);
+ assert.doesNotMatch(corrected.text,/направился прочь/);
+ const npc='Арвин молча кивнул. Он развернулся и направился прочь.';
+ assert.equal((await reviewGameNarration({...input,text:npc,completion:mockCompletion([valid])})).text,npc);
+});
+
+test('A successful or failed bargaining response cannot walk the named player away without their intent',async()=>{
+ const input=fixture(),calls=[];
+ const text='Арвин оставляет цену прежней. Бог неспешно удалился.';
+ const fixed='Арвин оставляет цену прежней и ждёт ответа.';
+ const result=await reviewGameNarration({...input,text,completion:mockCompletion([valid,{text:fixed},valid],calls)});
+ assert.equal(result.text,fixed);assert.equal(result.repaired,true);
+ assert.deepEqual(calls[1].context.violations.map(v=>[v.kind,v.evidence]),[['player_action','Бог неспешно удалился']]);
+ input.room.messages.splice(-1,0,{id:'departure',role:'user',userId:'host',content:'Ухожу от прилавка.'});
+ assert.equal((await reviewGameNarration({...input,text,completion:mockCompletion([valid])})).repaired,false);
+});
+
+test('An isolated impossible attempt can publish its engine outcome when the checker cannot parse a draft',async()=>{
+ const input=fixture({roll:20}),calls=[];
+ const event=input.room.tactical.log.at(-1);
+ Object.assign(event.calculation,{outcome:'impossible',success:false,critical:null,naturalCritical:'success'});
+ const result=await reviewGameNarration({...input,text:'Гора двигается и открывает сокровищницу.',completion:mockCompletion(['{broken'],calls)});
+ assert.equal(result.repaired,true);
+ assert.match(result.text,/невозможно/);
+ assert.doesNotMatch(result.text,/сокровищницу|натуральная/);
+ assert.equal(calls.length,1);
+ input.room.messages.splice(-1,0,{id:'second-player',role:'user',userId:'other',content:'Пытаюсь взобраться наверх.'});
+ await assert.rejects(reviewGameNarration({...input,text:'Гора двигается.',completion:mockCompletion(['{broken'])}),error=>error.code==='GM_NARRATION_CONFLICT');
 });

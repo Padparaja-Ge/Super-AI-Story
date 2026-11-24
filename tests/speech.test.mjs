@@ -53,3 +53,13 @@ test('Failed installation stays diagnosable after restarting the service',async 
 test('Long XTTS posts obey language limits and pronunciation is applied once before splitting',async t=>{
  const calls=[],f=await fixture(t,async r=>{calls.push(r);return {audio:audio().toString('base64'),duration:4};}),text='Тонерико '+('поднимает щит и держит секиру ').repeat(25)+'.',settings=speechSettings({provider:'xtts',pronunciations:[{from:'Тонерико',to:'Тонэрико'},{from:'Тонэрико',to:'не повторять замену'}]}),session=await(await f.request('/sessions',{text,settings})).json();assert.ok(session.count>1);for(let i=0;i<session.count;i++)assert.equal((await f.request(`/sessions/${session.id}/${i}`)).status,200);assert.ok(calls.every(r=>r.text.length<=160));assert.equal(calls.map(r=>r.text).join(' '),text.replace('Тонерико','Тонэрико'));assert.equal(f.state.settings.speech.pronunciations.length,0);
 });
+
+
+test('Saved voice listing, audio and PCM import survive an unavailable model storage folder',async t=>{
+ const f=await fixture(t,undefined,{getModelsDir:async()=>{throw Object.assign(Error('MODEL_DRIVE_OFFLINE'),{status:409});}}),before=JSON.stringify(f.state);
+ const created=await f.request('/references',{name:'Offline voice',text:'Точная расшифровка.',audio:audio().toString('base64')});assert.equal(created.status,200);const reference=await created.json();
+ const status=await f.request('/status');assert.equal(status.status,409);
+ const listing=await f.request('/references');assert.equal(listing.status,200);const refs=(await listing.json()).references;assert.equal(refs.length,1);assert.equal(refs[0].id,reference.id);
+ const playback=await f.request('/references/'+reference.id+'/audio');assert.equal(playback.status,200);assert.deepEqual(Buffer.from(await playback.arrayBuffer()),audio());
+ assert.equal(JSON.stringify(f.state),before);
+});

@@ -6,12 +6,16 @@ export const adventureRuleFields=[
  ['checkDc','Базовая сложность непривязанной проверки','combat',10,0,1000],
  ['slowActions','Медленных действий за ход','turns',1,1,10],['fastActions','Быстрых действий за ход','turns',2,0,20],['move','Перемещение, клеток','turns',6,0,100],['movementFastCost','Цена перемещения в быстрых действиях','turns',1,0,20],['equipFastCost','Цена экипировки в быстрых действиях','turns',1,0,20],['doorFastCost','Цена открытия двери','turns',1,0,20],
  ['flanking','Преимущество при окружении','tactics',true],['closeRangedDisadvantage','Помеха дальнему оружию вблизи','tactics',true],['projectileDisadvantage','Помеха магическому снаряду','tactics',true],['projectilesIgnoreWalls','Магический снаряд проходит через стены','tactics',false],['diagonalMovement','Разрешить диагональное перемещение','tactics',false],
+ ['critAttacks','Натуральные 20 и 1 критичны в атаках','criticals',true],['critChecks','Натуральные 20 и 1 критичны в проверках навыков и характеристик','criticals',true],['critContests','Натуральные 20 и 1 критичны в захвате и освобождении','criticals',true],
  ['restSlots','Отдых восстанавливает ячейки','recovery',true],['restHp','Отдых восстанавливает HP','recovery',false],['potionHealing','Лечение стандартным зельем','recovery',20,1,1000],['potionSlots','Стандартное зелье: восстановление ячеек','recovery',2,1,100],
 ].map(([key,label,group,defaultValue,min,max])=>Object.freeze({key,label,group,defaultValue,min,max,type:typeof defaultValue}));
+export const adventureCriticalRuleKeys=Object.freeze(['critAttacks','critChecks','critContests']);
 export const adventureRulesDefaults=Object.freeze({...Object.fromEntries(adventureRuleFields.map(f=>[f.key,f.defaultValue])),instructions:''});
 export function normalizeAdventureRules(mode,value={}){
  if(!['dnd','custom'].includes(mode)||!value||typeof value!=='object'||Array.isArray(value))throw new Error('Неверный режим или правила приключения.');
- const allowed=mode==='custom'?value:{fastActions:value.fastActions??2};
+ // D&D keeps the fixed engine rules; only the action economy and the critical
+ // house rules (which D&D tables commonly vary) are host-configurable there.
+ const allowed=mode==='custom'?value:{fastActions:value.fastActions??2,...Object.fromEntries(adventureCriticalRuleKeys.filter(key=>Object.hasOwn(value,key)).map(key=>[key,value[key]]))};
  const rules={...adventureRulesDefaults};
  for(const field of adventureRuleFields){const v=allowed[field.key]??field.defaultValue;if(typeof v!==field.type||field.type==='number'&&(!Number.isInteger(v)||v<field.min||v>field.max))throw new Error('Неверный параметр правил: '+field.label);rules[field.key]=v;}
  if(rules.armor>rules.armorCap)throw new Error('Базовый КД не может превышать максимальный КД.');

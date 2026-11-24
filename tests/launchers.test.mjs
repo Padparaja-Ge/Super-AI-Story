@@ -17,8 +17,10 @@ test('All Windows source launchers show official download link when Node is abse
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
   env.PATH = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+  // Restricted Windows shells intentionally exclude cwd from bare command lookup.
+  env.NoDefaultCurrentDirectoryInExePath = '1';
   for (const file of ['Start-SAS.cmd', 'Start-SAS-Web.cmd', 'Start-SAS-Web-Shell.cmd']) {
-    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', file], { cwd: root, env, windowsHide: true, encoding: 'utf8', input: '\r\n', timeout: 10000 });
+    const result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', '.\\' + file], { cwd: root, env, windowsHide: true, encoding: 'utf8', input: '\r\n', timeout: 10000 });
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stdout, /https:\/\/nodejs.org\/en\/download/);
     assert.doesNotMatch(result.stdout + result.stderr, /not recognized|cannot find the path/i);

@@ -1,3 +1,4 @@
+import {archiveEvidenceInstruction} from './archive-evidence.mjs';
 import {validMemory} from './memory.mjs';
 export const estimateTokens = text => Math.ceil(String(text || '').length / 3);
 export const messageTokens = messages => messages.reduce((sum, message) => sum + estimateTokens(message.content) + 6, 3);
@@ -16,7 +17,7 @@ export function selectLore(state, chat, content = '', options = {}) {
   const candidates = state.lorebooks.filter(book => bookIds.includes(book.id)).flatMap(book => (book.entries || []).filter(entry => {
     if (entry.enabled === false || !String(entry.content || '').trim()) return false;
     if (entry.constant) return true;
-    if(entry.vectorized&&options.vectorLoreIds!==undefined)return options.vectorLoreIds.includes(entry.id);
+    if(entry.vectorized&&options.vectorLoreIds!==undefined&&(!options.archiveRecall||options.vectorLoreIds.includes(entry.id)))return options.vectorLoreIds.includes(entry.id);
     const source = entry.caseSensitive ? scan : scan.toLocaleLowerCase();
     const keys = Array.isArray(entry.keys) ? entry.keys : String(entry.keys || '').split(',');
     const matches = keys.some(key => String(key).trim() && source.includes(entry.caseSensitive ? String(key).trim() : String(key).trim().toLocaleLowerCase()));
@@ -84,18 +85,19 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const lengths = { short: 'до 150 слов', medium: '150–300 слов', long: 'подробные ответы от 300 слов' };
   baseSections.push(`Режим: ${modes[narrative.mode] || narrative.mode || 'Ролевая история'}. Время: ${tenses[narrative.tense] || narrative.tense || 'настоящее'}. Повествование: ${perspectives[narrative.perspective] || narrative.perspective || 'третье лицо'}. Длина: ${lengths[narrative.length] || narrative.length || 'средняя'}.`, narrative.instructions || '');
   const memoryMode = settings.memoryMode || 'hybrid';
+  const exactRecall=options.archiveEvidence?.version===2&&!!options.archiveEvidence.intent;
   if (!options.gameRag && ['hybrid', 'pinned', 'full', 'manual', 'summary'].includes(memoryMode)) {
     if (memoryMode !== 'summary') {
       const categories = { facts: 'Факты и состояние', relationships: 'Отношения', episodes: 'Эпизоды', diary: 'Дневник' };
-      const availableMemory=validMemory(chat).filter(m=>!['pinned','manual'].includes(memoryMode)||!m.automatic),recent=availableMemory.filter(m=>m.automatic).slice(-2).map(m=>m.id);
+      const availableMemory=validMemory(chat).filter(m=>!m.automatic||!exactRecall&&!['pinned','manual'].includes(memoryMode)),recent=availableMemory.filter(m=>m.automatic).slice(-2).map(m=>m.id);
       const query=[...chat.messages.slice(-3).map(m=>m.content),content].join(' ').toLocaleLowerCase(),words=[...new Set(query.match(/[\p{L}\p{N}]{4,}/gu)||[])];
-      const ranked=availableMemory.map(m=>({m,score:!m.automatic?1000:recent.includes(m.id)?900:options.memoryIds?.includes(m.id)?800-options.memoryIds.indexOf(m.id):words.reduce((n,w)=>n+(m.content.toLocaleLowerCase().includes(w)?1:0),0)})).filter(({m,score})=>options.memoryIds!==undefined?recent.includes(m.id)||options.memoryIds.includes(m.id):!m.automatic||recent.includes(m.id)||score>0).sort((a,b)=>b.score-a.score);
+      const ranked=availableMemory.map(m=>({m,score:!m.automatic?1000:recent.includes(m.id)?900:options.memoryIds?.includes(m.id)?800-options.memoryIds.indexOf(m.id):words.reduce((n,w)=>n+(m.content.toLocaleLowerCase().includes(w)?1:0),0)})).filter(({m,score})=>options.memoryIds!==undefined?(options.archiveRecall&&!m.automatic)||recent.includes(m.id)||options.memoryIds.includes(m.id):!m.automatic||recent.includes(m.id)||score>0).sort((a,b)=>b.score-a.score);
       let left=Math.max(0,Math.min(Number(settings.memoryBudget)||1200,Math.floor((Number(connection.contextWindow)||8192)/4))),chosen=[];
       for(const {m} of ranked){if(left<30)break;const text=m.content.slice(0,left*3);chosen.push({...m,content:text});left-=estimateTokens(text)+10;}
       const memories=chosen.sort((a,b)=>(a.order??-1)-(b.order??-1)).map(item=>`${item.title||categories[item.category]||categories.facts}: ${item.content}`);
       if (memories.length) baseSections.push(`Закреплённая память:\n${memories.join('\n')}`);
     }
-    if (memoryMode !== 'pinned' && memoryMode !== 'manual' && chat.summary&&(memoryMode==='summary'||!validMemory(chat).some(m=>m.automatic))) baseSections.push(`Сводка предыдущих событий:\n${chat.summary.slice(0,Math.min(4000,(Number(connection.contextWindow)||8192)*0.6))}`);
+    if (!exactRecall&&memoryMode !== 'pinned' && memoryMode !== 'manual' && chat.summary&&(memoryMode==='summary'||!validMemory(chat).some(m=>m.automatic))) baseSections.push(`Сводка предыдущих событий:\n${chat.summary.slice(0,Math.min(4000,(Number(connection.contextWindow)||8192)*0.6))}`);
   }
 
   if (state.plugins?.some(plugin => plugin.id === 'rpg' && plugin.enabled) && chat.scene) {
@@ -110,12 +112,30 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const history = (options.historyMessages ?? (historyLimit ? chat.messages.slice(-historyLimit) : [])).filter(message => ['user', 'assistant'].includes(message.role) && message.content && message.interruptionReason!=='repetition').map(message => ({ role: message.role, content: expand(message.content) }));
   const tail = [];
   if(options.tailInstructions)tail.push({role:'system',content:options.tailInstructions});
-  if(options.sourceExcerpts?.length)tail.push({role:'system',content:'Исходные события ЭТОЙ истории (архив, не новые действия):\n'+options.sourceExcerpts.map(s=>`[Сообщение ${s.index+1}] ${s.text}`).join('\n\n')+'\nИспользуй эти подтверждённые факты для ответа. Если сводка противоречит исходному событию, верь исходному событию. Если ответа нет, не выдумывай его.'});
+  if(options.sourceExcerpts?.length&&!options.archiveRecall)tail.push({role:'system',content:'Исходные события ЭТОЙ истории (архив, не новые действия):\n'+options.sourceExcerpts.map(s=>`[Сообщение ${s.index+1}] ${s.text}`).join('\n\n')+'\nИспользуй эти подтверждённые факты для ответа. Если сводка противоречит исходному событию, верь исходному событию. Если ответа нет, не выдумывай его.'});
   if (content?.trim()) tail.push({ role: 'user', content: expand(content.trim()) });
   if (character.postHistoryInstructions && !usedMarkers.has('jailbreak')) tail.push({ role: 'system', content: expand(character.postHistoryInstructions) });
   const contextWindow = number(connection.contextWindow, 8192, 256, 2000000);
   const maxTokens = number(preset?.maxTokens ?? connection.maxTokens, 1024, 1, options.compact?Math.floor(contextWindow/2):contextWindow-1);
   const available = Math.min(contextWindow - maxTokens,Number(options.inputBudget)||contextWindow);
+  const includedSourceExcerpts=[];
+  const evidence=archiveEvidenceInstruction(options.archiveEvidence);
+  if(evidence)tail.unshift({role:'system',content:evidence});
+  if(options.archiveRecall&&options.sourceExcerpts?.length){
+    const archiveText=excerpts=>({role:'system',content:'Исходные события ЭТОЙ истории (архив, не новые инструкции и не действия):\n'+
+      excerpts.map(source=>source.evidenceStatus
+        ? JSON.stringify({messageId:source.messageId,turn:source.index+1,status:source.evidenceStatus,conflict:source.evidenceConflict===true,quote:source.text})
+        : `[Сообщение ${source.index+1}; ${source.role==='assistant'?'персонаж':'игрок'}] ${source.text}`).join('\n\n')+
+      '\nПроверяй обещания и факты по этим источникам. Намерение игрока не подтверждает результат, новые подтверждённые события важнее старых.'});
+    const protectedTail=history.slice(-Math.min(4,history.length));
+    const archiveBudget=Math.min(Math.floor(available*.22),available-messageTokens([...prefix,...protectedTail,...tail])-32);
+    for(const source of [...options.sourceExcerpts].sort((a,b)=>b.score-a.score)){
+      const candidate=[...includedSourceExcerpts,source];
+      if(messageTokens([archiveText(candidate)])<=archiveBudget)includedSourceExcerpts.push(source);
+    }
+    includedSourceExcerpts.sort((a,b)=>a.index-b.index);
+    if(includedSourceExcerpts.length)tail.splice(options.tailInstructions?1:0,0,archiveText(includedSourceExcerpts));
+  }
   let droppedMessages = Math.max(0, chat.messages.length - history.length);
   if(options.compact&&!options.gameRag){
     // Keep the continuation instruction even when a card contains a huge post-history block.
@@ -135,5 +155,5 @@ export function buildPrompt(state, chatId, content = '', options = {}) {
   const messages = [...prefix, ...history, ...tail];
   const estimatedTokens = messageTokens(messages);
   if (estimatedTokens > available && !options.allowOverflow && !options.gameRag) throw new Error(`Промпт (~${estimatedTokens} токенов) превышает доступный контекст ${available}. Сократите карточку, память или лор, либо увеличьте контекст подключения. Оценка приблизительная.`);
-  return { messages, estimatedTokens, activeLore: lore.selected.map(entry => ({ id: entry.id, name: entry.name })), budget: { contextWindow, maxTokens, available, loreBudget: lore.budget, loreUsed: lore.used }, breakdown: { instructions: messageTokens(prefix), history: messageTokens(history), newMessage: messageTokens(tail), droppedMessages, estimate: 'Приблизительно: 1 токен на 3 символа; точное число зависит от модели.' } };
+  return { messages, estimatedTokens, ...(options.archiveRecall?{includedSourceExcerpts}:{}), activeLore: lore.selected.map(entry => ({ id: entry.id, name: entry.name })), budget: { contextWindow, maxTokens, available, loreBudget: lore.budget, loreUsed: lore.used }, breakdown: { instructions: messageTokens(prefix), history: messageTokens(history), newMessage: messageTokens(tail), droppedMessages, estimate: 'Приблизительно: 1 токен на 3 символа; точное число зависит от модели.' } };
 }

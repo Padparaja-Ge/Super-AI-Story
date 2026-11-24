@@ -19,3 +19,6 @@
 
 .message-interruption{margin-top:10px;color:var(--muted);font-size:12px}.message-actions>.btn{font-size:12px;padding:6px 10px}
 html:lang(ja){font-family:"Yu Gothic UI",Meiryo,sans-serif}html:lang(zh-CN){font-family:"Microsoft YaHei UI","Microsoft YaHei",sans-serif}html:lang(ko){font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+
+.archive-memory-option { margin: 12px 0; }
+.archive-memory-option p { margin-top: 6px; }

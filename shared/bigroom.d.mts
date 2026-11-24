@@ -1,0 +1,12 @@
+export const BIG_ROOM_MODE:'bigroom';
+export const BIG_ROOM_MIN_CAST:number;
+export const BIG_ROOM_MAX_CAST:number;
+export const BIG_ROOM_MAX_CHAIN:number;
+export function isBigRoom(room:any):boolean;
+export function normalizeCast(characters:any[],ids:unknown):string[];
+export function speakerLorebookIds(room:any,character:any):string[];
+export function mentions(text:string,name:string):boolean;
+export function pickSpeaker(cast:string[],messages:any[],characters:any[],options?:{requested?:string}):string;
+export function castBrief(cast:string[],characters:any[],speakerId:string):string;
+export function bigRoomInstructions(input:{speaker:string;others?:string;players?:string;story?:string}):string;
+export function speakerView<T extends {role:string;characterId?:string;name?:string;content:string}>(messages:T[],speakerId:string):T[];

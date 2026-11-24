@@ -14,7 +14,10 @@ export function unfinishedNarration(room:any,messages:any[]):{messageId:string;r
   return null;
 }
 
+export const isBigRoomUi=(room:{mode?:string}):boolean=>room?.mode==='bigroom';
+
 export function roomModeLabel(room:{mode?:string;tactical?:unknown}):string {
+  if(room.mode==='bigroom')return 'Большая комната';
   if(room.mode==='custom')return 'НРИ · свои правила';
   if(isAdventureRoom(room))return 'D&D · упрощённая';
   return 'Role Play с персонажем';

@@ -2,7 +2,7 @@
 export const fanficDefaults = Object.freeze({
   connectionId: '', style: 'Живая художественная проза, конкретные детали и естественные диалоги',
   perspective: 'Третье лицо', tense: 'Прошедшее', genre: '', audience: 'Общая аудитория',
-  instructions: '', sceneCount: 3, maxTokens: 1200, temperature: 0.8, vectorMemory: false,
+  writingLanguage: 'auto', instructions: '', sceneCount: 3, maxTokens: 1200, temperature: 0.8, vectorMemory: false, archiveMemory: false, archiveMemoryVersion: 1,
   memoryTopK: 8, memoryThreshold: 0.3, memoryRecentEpisodes: 2, continuityCheck:true,
   generationProfiles:Object.freeze({modelKind:'generic',stages:Object.freeze({})}),
 });

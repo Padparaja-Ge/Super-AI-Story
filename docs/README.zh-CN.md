@@ -6,7 +6,7 @@
 
 SAS 将角色卡、玩家人设、世界设定、记忆、插图和语音朗读整合在一个本地工作空间中。你可以使用自己的 GGUF 模型、连接兼容 API，或邀请朋友加入同一个故事。
 
-[下载 Windows 版 SAS 0.9.11](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.11/SAS-Windows-0.9.11.zip) · [所有版本](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [使用指南](USER-GUIDE.md)
+[下载 Windows 版 SAS 0.9.12](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.12/SAS-Windows-0.9.12.zip) · [所有版本](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [使用指南](USER-GUIDE.md)
 
 ## 主要功能
 
@@ -14,6 +14,8 @@ SAS 将角色卡、玩家人设、世界设定、记忆、插图和语音朗读�
 - **同人创作：** 管理作品、季和章节，维护角色与原作设定，审核并确认正文。
 - **多人游戏：** 房间大厅、多人 RP 或 D&D、房主管理工具、背景音乐和语音聊天。
 - **D&D 与自定义跑团规则：** 故事书、规则、战术地图、先攻顺序、物品栏，以及服务器引擎处理的行动判定。
+- **档案记忆（Beta 2）：** 从当前故事的原始记录中查找有依据的事件。
+- **新玩法：** 带插图的同人模板、多角色共享房间、主持人风格和 D&D 工作室中的 3D 骰子。
 - **模型与媒体：** 支持 CPU/CUDA/Vulkan 的 llama.cpp、兼容 API、可选本地嵌入模型、ComfyUI 图像生成和语音引擎。
 - **扩展：** 通过 SAS API 2 添加面板、页面、命令、样式和后端功能。
 
@@ -21,11 +23,11 @@ SAS 将角色卡、玩家人设、世界设定、记忆、插图和语音朗读�
 
 ## 在 Windows 上安装
 
-1. 下载适用于 Windows 10/11 x64 的 **SAS-Windows-0.9.11.zip**。
+1. 下载适用于 Windows 10/11 x64 的 **SAS-Windows-0.9.12.zip**。
 2. 将整个压缩包解压到单独的文件夹，运行 **SAS.exe**。<code>app/</code> 和 <code>engines/</code> 必须保留在同一目录下。
 3. 在“设置 → 模型与 API”中选择 GGUF 模型或配置 API。
 
-成品包不需要 Node.js，也无需自行编译。较小的 **SAS-Start-0.9.11.zip** 会在运行 <code>Start-SAS.cmd</code> 时下载并安装相同的成品包，因此需要联网。对话模型、嵌入模型和 ComfyUI 需单独选择。
+成品包不需要 Node.js，也无需自行编译。较小的 **SAS-Start-0.9.12.zip** 会在运行 <code>Start-SAS.cmd</code> 时下载并安装相同的成品包，因此需要联网。对话模型、嵌入模型和 ComfyUI 需单独选择。
 
 浏览器模式使用 <code>Start-SAS-Web.cmd</code>，默认地址为 **http://127.0.0.1:3212**。<code>Stop-SAS-Web.cmd</code> 停止服务器，<code>Repair-SAS.cmd</code> 检查和恢复程序文件。更新前请先备份数据。
 

@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {selectFanficLore,resolveFanficContext,packReference,fanficCast,clip,fanficDraftSources} from '../server/fanfic-context.mjs';
-import {buildFanficMessages,prepareFanficMessages,validateMemory,splitFanficMemory,splitFanficMemoryForModel,fanficMemoryInstructions,fanficMemorySchema} from '../server/fanfic.mjs';
+import {buildFanficMessages,prepareFanficMessages,approvedMemories,contentHash,createFanfic,normalizeFanficProject,validateMemory,splitFanficMemory,splitFanficMemoryForModel,fanficMemoryInstructions,fanficMemorySchema} from '../server/fanfic.mjs';
 import {messageTokens} from '../server/prompt.mjs';
+import {createTasks} from '../server/tasks.mjs';
 import {fanficDefaults} from '../shared/fanfic.mjs';
 import {cleanFanficProse,fanficStops} from '../server/fanfic-prose.mjs';
 
@@ -15,6 +16,7 @@ const project=()=>({id:'own-work',world:'Свой мир',canon:'',divergence:''
  {id:'unrelated',content:'НЕСВЯЗАННЫЙ_ЛОР',keys:['чайник'],priority:100},
  {id:'off',content:'ОТКЛЮЧЁННАЯ_ЗАПИСЬ',constant:true,enabled:false}
 ]}]});
+const encoderState=(extra={})=>({...extra,settings:{embeddings:{connectionId:'encoder'}},connections:[{id:'encoder',model:'mock-embedding',baseUrl:'http://127.0.0.1:1/v1'}]});
 const memory=(id,n,summary)=>({id,episodeId:'e'+n,title:'Серия '+n,summary,location:'',relationships:[],openThreads:[]});
 test('Fanfic lore respects keywords, case, secondary keys, constants and namespaced vector matches',()=>{
  const p=project();assert.deepEqual(selectFanficLore(p,'башня').map(e=>e.id),['own-book:always','own-book:word']);
@@ -25,13 +27,13 @@ test('Fanfic lore respects keywords, case, secondary keys, constants and namespa
 test('Vector retrieval uses full summaries and only saved project lore, filters low scores and preserves recent chronology',async()=>{
  const p=project(),docs=[memory('old',1,'Старый секрет '+ 'начало '.repeat(400)+' САПФИР_В_КОНЦЕ'),memory('noise',2,'Нет совпадения'),memory('recent1',3,'Недавнее событие'),memory('recent2',4,'Последнее событие')];
  docs[0].sourceEvidence=['Исходная улика: БОРЕЙ-817.'];
- let inputs;const result=await resolveFanficContext({state:{fanficProjects:[{id:'other',memory:'ЧУЖОЙ_СЕКРЕТ'}],chats:[{content:'ЧУЖОЙ_ЧАТ'}]},project:p,episode:{id:'next',brief:'Найти печать'},memories:docs,embeddings:{vectors:async(_s,texts)=>{inputs=texts;return [[1,0],[1,0],[0,1],[0,1],[0,1],[1,0]];}},signal:new AbortController().signal});
+ let inputs;const result=await resolveFanficContext({state:encoderState({fanficProjects:[{id:'other',memory:'ЧУЖОЙ_СЕКРЕТ'}],chats:[{content:'ЧУЖОЙ_ЧАТ'}]}),project:p,episode:{id:'next',brief:'Найти печать'},memories:docs,embeddings:{vectors:async(_s,texts)=>{inputs=texts;return [[1,0],[1,0],[0,1],[0,1],[0,1],[1,0]];}},signal:new AbortController().signal});
  assert.match(inputs[1],/САПФИР_В_КОНЦЕ/);assert.match(inputs[1],/БОРЕЙ-817/);assert.ok(!inputs.join().includes('ЧУЖОЙ'));assert.ok(!inputs.join().includes('НЕСВЯЗАННЫЙ_ЛОР'));
  assert.deepEqual(result.memories.map(d=>d.id),['old','recent1','recent2']);assert.equal(result.report.vectorStatus,'ready');assert.equal(result.report.selectedLore.find(d=>d.id==='own-book:vector').reason,'vector');
 });
 test('Vector lore works independently of the memory switch; embedding failure falls back without importing other data',async()=>{
  const p=project();p.settings.vectorMemory=false;
- const result=await resolveFanficContext({state:{},project:p,episode:{id:'next',brief:'башня'},memories:[memory('old',1,'Свой факт')],embeddings:{vectors:async()=>{throw new Error('unavailable');}},signal:new AbortController().signal});
+ const result=await resolveFanficContext({state:encoderState(),project:p,episode:{id:'next',brief:'башня'},memories:[memory('old',1,'Свой факт')],embeddings:{vectors:async()=>{throw new Error('unavailable');}},signal:new AbortController().signal});
  assert.equal(result.report.vectorStatus,'fallback');assert.deepEqual(result.memories.map(d=>d.id),['old']);assert.equal(result.lore.length,2);assert.equal(result.report.warnings.length,1);
 });
 test('Fanfic abort never becomes a silent vector fallback',async()=>{
@@ -98,7 +100,7 @@ test('A long current episode retrieves its own earlier source and never promotes
 test('Current-draft vector retrieval is bounded and falls back to its own source after encoder failure',async()=>{
  const p=project();p.lorebooks=[];
  const episode={id:'current',brief:'Вернись к улике'},prose='Улика: БОРЕЙ-991.\n\n'+('Герои беседовали о путешествии.\n\n'.repeat(3000));
- let count=0;const result=await resolveFanficContext({state:{},project:p,episode,memories:[],currentText:prose,instructions:'Где нашли улику БОРЕЙ-991?',embeddings:{vectors:async(_s,values)=>{count=values.length;throw new Error('Encoder offline');}},signal:new AbortController().signal});
+ let count=0;const result=await resolveFanficContext({state:encoderState(),project:p,episode,memories:[],currentText:prose,instructions:'Где нашли улику БОРЕЙ-991?',embeddings:{vectors:async(_s,values)=>{count=values.length;throw new Error('Encoder offline');}},signal:new AbortController().signal});
  assert.ok(count<=25);assert.equal(result.report.vectorStatus,'fallback');assert.ok(result.draft.some(d=>d.content.includes('БОРЕЙ-991')));assert.ok(result.report.warnings.length);assert.deepEqual(result.memories,[]);
 });
 
@@ -140,4 +142,132 @@ test('External connections skip native tokenizer routes and native fitting retri
  const p=project();p.lorebooks=[];const options={project:p,episode:{season:1,number:1,brief:'Событие.'},connection:{id:'external',contextWindow:2048}};
  const external=await prepareFanficMessages(options,{countTokens:async()=>{throw Error('Must not call native tokenizer for API');}});assert.equal(external.actualTokens,null);
  let calls=0;await assert.rejects(prepareFanficMessages({...options,connection:{id:'sas-local',contextWindow:2048}},{countTokens:async()=>{calls++;return 100000;}}),/не помещаются/);assert.equal(calls,7);
+});
+
+test('Curated fanfic lore only uses an explicit encoder once project memory is enabled and remains searchable by exact keys',async()=>{
+ const p=project(),episode={id:'next',brief:'Вечером героиня ищет путь.'};
+ p.lorebooks[0].entries=[{id:'curated',name:'Служебная сеть',content:'Короткое служебное окно доступно только через диспетчера.',keys:['диспетчерская сеть'],vectorWhenMemory:true}];
+ p.settings.vectorMemory=false;
+ let calls=0;
+ const embeddings={vectors:async(_state,texts)=>{calls++;return texts.map(()=>[1,0]);}};
+ const opts={project:p,episode,embeddings,state:encoderState(),instructions:'Как незаметно связаться с постом? '};
+ assert.equal((await resolveFanficContext(opts)).report.vectorStatus,'disabled');
+ assert.equal(calls,0);
+ p.settings.vectorMemory=true;
+ const state={settings:{embeddings:{connectionId:''}},activeConnectionId:'writer',connections:[{id:'writer',model:'mock-writer',baseUrl:'http://127.0.0.1:1/v1'}]};
+ const lexical=await resolveFanficContext({...opts,state,instructions:'Нужна диспетчерская сеть.'});
+ assert.equal(lexical.report.vectorStatus,'fallback');
+ assert.equal(lexical.lore[0].reason,'keyword');
+ assert.equal(calls,0,'A writing provider must never become the embedding model implicitly');
+ const semantic=await resolveFanficContext(opts);
+ assert.equal(semantic.report.vectorStatus,'ready');
+ assert.equal(semantic.lore[0].reason,'vector');
+ assert.equal(calls,1);
+});
+
+test('Compact fanfic lore retains a specific current alias next to a constant despite crowded opening keywords',async()=>{
+ const p=project();
+ p.settings.maxTokens=340;
+ const text='Связная запись с условиями этой сцены. '.repeat(10);
+ p.lorebooks[0].entries=[
+   {id:'constant',name:'Условия',content:text,constant:true,priority:70},
+   {id:'constant-2',name:'Оговорки',content:text,constant:true,priority:65},
+   ...Array.from({length:20},(_,i)=>({id:'generic-'+i,name:'Запись '+i,content:text,keys:['Асуна'],priority:60})),
+   {id:'focused',name:'Особая записка',content:'Точная улика: ЧАСЫ-813. '+text,keys:['личное устройство Augma'],priority:10}
+ ];
+ const episode={id:'current',season:1,number:2,brief:'Асуна вспоминает вчерашний путь. '.repeat(21)};
+ const instructions='Асуна открывает личное устройство AUGMA и проверяет код.';
+ const context=await resolveFanficContext({state:{},project:p,episode,instructions});
+ assert.equal(context.lore[2].id,'own-book:focused');
+ for(const contextWindow of [2048,4096]){
+   const result=await prepareFanficMessages({project:p,episode,connection:{id:'sas-local',contextWindow},instructions,...context},{countTokens:async(_c,_s,messages)=>Math.ceil(messages.map(m=>m.content).join('').length/2.1)+16});
+   assert.ok(result.included.lore.includes('own-book:constant'));
+   assert.ok(result.included.lore.includes('own-book:focused'));
+   assert.ok(result.actualTokens+result.maxTokens+260<=contextWindow);
+   assert.match(result.messages[1].content,/ЧАСЫ-813/u);
+ }
+ const rewrite=buildFanficMessages({project:p,episode,connection:{contextWindow:4096},instructions,purpose:'rewrite',selectedText:'Асуна смотрит на часы.',...context});
+ assert.ok(rewrite.included.lore.includes('own-book:focused'));
+ assert.match(rewrite.messages[1].content,/ЧАСЫ-813/u);
+});
+
+test('Archive fanfic query keeps the latest clue ahead of a long starter brief and isolates earlier approved prose',async()=>{
+ const p=project();
+ p.settings={...p.settings,archiveMemory:true,memoryThreshold:.4};
+ p.lorebooks[0].entries=[{id:'exact',name:'Печать',content:'Порядок передачи подтверждает именно владелец. EXACT_LORE_KEY',keys:['серебряная печать'],vectorWhenMemory:true}];
+ const clue='Серебряная печать была спрятана под третьей каменной ступенью.';
+ const earlier={id:'earlier',status:'approved',season:1,number:1,content:clue};
+ earlier.memory={sourceHash:contentHash(earlier.content),summary:'Героиня осмотрела зал.'};
+ const future={id:'future',status:'approved',season:1,number:4,content:'Серебряная печать была перенесена. FUTURE_FANFIC_TOKEN'};
+ future.memory={sourceHash:contentHash(future.content),summary:'Следующий день.'};
+ const draft={id:'draft',status:'draft',season:1,number:2,content:'Серебряная печать в башне. DRAFT_FANFIC_TOKEN'};
+ const brief=Array.from({length:37},(_,i)=>'стартовая-подробность-'+i).join(' ');
+ const episode={id:'current',season:1,number:3,brief,content:''};
+ p.episodes=[earlier,draft,episode,future];
+ const instructions='Где спрятана серебряная печать? Напомни место.';
+ const calls=[];
+ const opts={state:encoderState({fanficProjects:[{id:'foreign',episodes:[{content:'Серебряная печать FOREIGN_FANFIC_TOKEN'}]}]}),project:p,episode,memories:approvedMemories(p,episode),instructions,
+   embeddings:{vectors:async(_s,texts)=>{calls.push(texts);return texts.map(value=>/печать/iu.test(value)?[1,0]:[0,1]);}}};
+ const result=await resolveFanficContext(opts);
+ assert.equal(result.report.archiveRecall.scope,'fanfic:'+p.id);
+ assert.equal(result.report.vectorStatus,'ready');
+ assert.match(calls[0][0],/серебряная печать/iu);
+ assert.ok(calls.every(batch=>batch.length<=25));
+ assert.ok(result.archive.some(entry=>entry.episodeId==='earlier'&&entry.excerpt.includes('третьей каменной ступенью')));
+ assert.deepEqual(result.lore.map(item=>item.id),['own-book:exact']);
+ assert.doesNotMatch(calls.flat().join(' '),/DRAFT_FANFIC_TOKEN|FUTURE_FANFIC_TOKEN|FOREIGN_FANFIC_TOKEN|EXACT_LORE_KEY/u);
+ const prompt=await prepareFanficMessages({project:p,episode,connection:{id:'sas-local',contextWindow:4096},instructions,...result},{countTokens:async(_c,_s,messages)=>Math.ceil(messages.map(m=>m.content).join('').length/2.1)+16});
+ assert.match(prompt.messages[1].content,/третьей каменной ступенью/);
+ assert.doesNotMatch(prompt.messages[1].content,/DRAFT_FANFIC_TOKEN|FUTURE_FANFIC_TOKEN|FOREIGN_FANFIC_TOKEN/u);
+ const fallback=await resolveFanficContext({...opts,embeddings:{vectors:async()=>{throw Error('offline');}}});
+ assert.equal(fallback.report.vectorStatus,'fallback');
+ assert.ok(fallback.archive.some(entry=>entry.episodeId==='earlier'));
+ assert.ok(fallback.lore.some(entry=>entry.id==='own-book:exact'));
+});
+
+test('Local structured fanfic edits retain only selected source, use scoped references once, and fall back when exact context is full',async()=>{
+ const run=async rejectReferences=>{
+   const selected='Дежурный спрятал серебряную печать. '.repeat(13).trimEnd();
+   const authored='Префикс вне выделения. '+selected+' Суффикс вне выделения.';
+   const state=encoderState();
+   state.activeConnectionId='sas-local';state.connections.unshift({id:'sas-local',contextWindow:2048,model:'mock-writer',baseUrl:'http://127.0.0.1:1/v1'});
+   const p=normalizeFanficProject({title:'Правка лора',settings:{vectorMemory:true,continuityCheck:false,maxTokens:300},lorebooks:[{id:'ward',name:'Стража',entries:[{id:'seal',name:'Печать',content:'Печать переходила только по записи в журнале. LORE_SEAL',keys:['серебряная печать'],vectorWhenMemory:true}]}],episodes:[
+     {number:1,title:'Правило',content:'Смотритель открыл хранилище ключом. EARLIER_CONTEXT'},
+     {number:2,title:'Правка',content:authored},
+     {number:3,title:'Дальше',content:'Печать пропала. FUTURE_CONTEXT'}
+   ]},state,{importing:true});
+   p.settings.connectionId='sas-local';
+   const [earlier,current,future]=p.episodes;
+   for(const entry of [earlier,future]){entry.status='approved';entry.memory={sourceHash:contentHash(entry.content),summary:entry.content};}
+   state.fanficProjects=[p,{id:'other',episodes:[{content:'Серебряная печать FOREIGN_CONTEXT'}]}];
+   let snapshot=state,taskPromise,encoding=0;
+   const tasks=createTasks(),originalRun=tasks.run;
+   tasks.run=(...args)=>{const task=originalRun(...args);taskPromise=task.promise;return task;};
+   const sent=[],tokenized=[];
+   const fanfic=createFanfic({getState:()=>structuredClone(snapshot),saveState:next=>{snapshot=structuredClone(next);},getSecret:()=>'',tasks,
+     embeddings:{vectors:async(_s,texts)=>{encoding++;return texts.map(()=>[1,0]);}},
+     countTokens:async(_c,_s,messages)=>{
+       const data=JSON.parse(messages[1].content);tokenized.push(data);
+       return data.source.length>230||rejectReferences&&data.reference?3900:450;
+     },structured:async args=>{sent.push(args.context);return args.parse({replacement:args.context.source.replaceAll('спрятал','укрыл')});}});
+   const selectionStart=authored.indexOf(selected),selectionEnd=selectionStart+selected.length;
+   fanfic.generate(p.id,current.id,{action:'rewrite',instructions:'Смягчи описание. Лор: серебряная печать.',selectionStart,selectionEnd,expectedRevision:current.revision});
+   await taskPromise;
+   assert.ok(sent.length>1,'The exact tokenizer has to split the selected source');
+   assert.equal(encoding,1,'Precomputed references must not re-encode each split');
+   assert.ok(tokenized.some(data=>data.reference));
+   assert.ok(sent.every(data=>data.source.length<=230));
+   assert.equal(sent.map(data=>data.source).join(''),selected);
+   assert.equal(fanfic.read(p.id,current.id).episode.content,authored.slice(0,selectionStart)+selected.replaceAll('спрятал','укрыл')+authored.slice(selectionEnd));
+   const transmitted=JSON.stringify(sent);
+   assert.doesNotMatch(transmitted,/Префикс вне выделения|Суффикс вне выделения|FUTURE_CONTEXT|FOREIGN_CONTEXT/u);
+   if(rejectReferences){
+     assert.ok(sent.every(data=>!data.reference));
+   }else{
+     assert.match(transmitted,/LORE_SEAL/u);
+     assert.match(transmitted,/EARLIER_CONTEXT/u);
+   }
+ };
+ await run(false);
+ await run(true);
 });

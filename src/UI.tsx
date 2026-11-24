@@ -11,10 +11,10 @@ export function SectionHeader({eyebrow, title, description, actions}: {eyebrow?:
 export function Empty({title, children, icon}: {title: string; children?: ReactNode; icon?: ReactNode}) {return <div className="empty"><div className="empty-symbol">{icon || <Orbit size={34}/>}</div><h3>{t(title)}</h3>{children}</div>;}
 export function Spinner(){return <LoaderCircle className="spin" size={18}/>;}
 export function ImportButton({onFile, accept = '.json', label = 'Импорт', disabled}: {onFile: (file: File) => void; accept?: string; label?: string; disabled?: boolean}) {const ref = useRef<HTMLInputElement>(null); return <><input ref={ref} type="file" className="hidden" accept={accept} onChange={event => {const file = event.target.files?.[0]; if(file) onFile(file); event.target.value = '';}}/><Button disabled={disabled} onClick={() => ref.current?.click()}><Upload size={16}/>{t(label)}</Button></>;}
-export function Modal({title, children, onClose}: {title: string; children: ReactNode; onClose: () => void}) {
+export function Modal({title, children, onClose, className}: {title: string; children: ReactNode; onClose: () => void; className?:string}) {
   const ref=useRef<HTMLElement>(null);
   useEffect(()=>{const previous=document.activeElement as HTMLElement|null;ref.current?.focus();return()=>previous?.focus();},[]);
-  return <div className="modal-backdrop" onClick={onClose}><section ref={ref} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={t(title)} onClick={e => e.stopPropagation()} onKeyDown={e => {
+  return <div className="modal-backdrop" onClick={onClose}><section ref={ref} tabIndex={-1} className={className?'modal '+className:'modal'} role="dialog" aria-modal="true" aria-label={t(title)} onClick={e => e.stopPropagation()} onKeyDown={e => {
     if(e.key === 'Escape') onClose();
     if(e.key==='Tab'){const focusable=Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]')||[]).filter(el=>el.getClientRects().length>0);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&(document.activeElement===first||document.activeElement===ref.current)){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
   }}><header><h2>{t(title)}</h2><IconButton title={t("Закрыть")} onClick={onClose}><X size={20}/></IconButton></header>{children}</section></div>;

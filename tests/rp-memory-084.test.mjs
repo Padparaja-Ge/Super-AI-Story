@@ -37,3 +37,13 @@ test('Memory uses the native tokenizer to split even one post and covers every s
 test('Unfinished RP replies are not written into chronological memory until completed',()=>{
  const chat={memory:[],messages:[{id:'partial',role:'assistant',content:'Незаконченный факт',interrupted:true},{id:'done',role:'assistant',content:'Подтверждённый факт.'}]};assert.deepEqual(pendingMemory(chat).map(p=>p.id),['done']);
 });
+
+
+test('bounded automatic summary leaves source messages for later manual processing',async()=>{
+ let state={settings:{},connections:[{id:'local',model:'mock',baseUrl:'http://127.0.0.1:1/v1',contextWindow:4096,maxTokens:120}],activeConnectionId:'local',chats:[{id:'draft',messages:Array.from({length:14},(_,i)=>({id:String(i),role:'assistant',content:'Событие '+i})),memory:[],memorySettings:{summaryInterval:4}}]};
+ const memory=createMemory({getState:()=>structuredClone(state),saveState:next=>{state=next;},getSecret:()=>'',countTokens:async()=>80,completion:async()=> 'Краткая сводка.'});
+ assert.equal((await memory.summarize('draft',{maxBlocks:1})).blocks,1);
+ assert.equal(pendingMemory(state.chats[0]).length,10);
+ assert.equal((await memory.summarize('draft')).blocks,3);
+ assert.equal(pendingMemory(state.chats[0]).length,0);
+});

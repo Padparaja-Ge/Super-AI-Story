@@ -93,6 +93,22 @@ test('Host chat d20 prepares a context-bound check before rolling, preserves the
  assert.equal(result.message.dice.value,2);assert.equal(result.message.dice.eventId,check.id);assert.equal(check.calculation.dc,15);assert.equal(check.calculation.outcome,'failure');assert.equal(check.calculation.messageId,'player-post');
  const request=JSON.parse(f.calls[0].messages.find(m=>m.role==='user').content);assert.doesNotMatch(JSON.stringify(request),/"roll"|"total"/);assert.equal(request.attempt.ability,undefined,'auto selection is resolved by the preparer');
  await assert.rejects(()=>f.room.dice(20),/уже выполнена/);assert.equal(f.state.multiplayer.tactical.log.filter(e=>e.calculation?.kind==='check').length,1);
+ const mechanics=structuredClone(f.state.multiplayer.tactical);
+ const profileStyles=[['standard',null],['mark-vedin',/Марк Ведин/],['lev-krechet',/Лев Кречет/],['mira-rostova',/Мира Ростова/]];
+ let calculated;
+ for(const [profile,style] of profileStyles){
+  f.room.configure({gmSettings:{profile}});
+  const instructions=f.room.context().priorityInstructions;
+  const encoded=/\[SAS_CHECK_OUTCOMES\] ([^\n]+)/u.exec(instructions)?.[1];
+  assert.ok(encoded,'Missing check contract for '+profile);
+  if(style)assert.match(instructions,style);
+  else assert.doesNotMatch(instructions,/Стиль ведущего:/u);
+  const [bound]=JSON.parse(encoded);
+  assert.equal(bound.eventId,check.id);assert.equal(bound.roll,2);assert.equal(bound.outcome,'failure');
+  if(calculated)assert.equal(encoded,calculated);
+  calculated=encoded;
+  assert.deepEqual(f.state.multiplayer.tactical,mechanics,'A profile switch changed the table');
+ }
  await f.room.act({action:'end'});const generated=await f.room.generate(),prompt=JSON.stringify(f.calls.findLast(c=>c.stream&&!c.response_format).messages);assert.match(prompt,/SAS_CHECK_OUTCOMES/);assert.match(prompt,/"dc":15|\\"dc\\":15/);assert.match(prompt,/failure/);assert.match(prompt,/Банка совершенно пуста/);assert.ok(f.state.multiplayer.tactical.narratedEventIds.includes(check.id));assert.ok(generated.message.content);
  await f.room.generate({regenerateMessageId:generated.message.id});assert.equal(f.state.multiplayer.tactical.log.filter(e=>e.calculation?.kind==='check').length,1);assert.equal(f.calls.filter(c=>c.messages.some(m=>m.content.includes('[SAS_PREPARE_CHECK]'))).length,1);assert.match(JSON.stringify(f.calls.findLast(c=>c.stream&&!c.response_format).messages),/failure/);
  const audits=f.calls.filter(c=>c.messages.some(m=>m.content.includes('[SAS_REVIEW_GAME_NARRATION]')));assert.equal(audits.length,2,'Regeneration validates the same original result without a new roll');for(const request of audits)assert.equal(JSON.parse(request.messages[1].content).outcomes[0].outcome,'failure');
@@ -159,4 +175,61 @@ test('A rulebook edit during preparation invalidates the old decision without ro
  state.lorebooks.push({id:'current-rules',name:'Правила',entries:[{id:'effect',enabled:true,content:'Обычный валун требует силы.'}]});state.multiplayer.rulebookIds=['current-rules'];f.save(state);
  const pending=f.room.act({action:'prepareCheck',checkType:'strength',intent:'Сдвинуть валун.'});await ready;const changed=f.state;changed.lorebooks.find(b=>b.id==='current-rules').entries[0].content='Этот валун закреплён неразрушимой магической печатью.';f.save(changed);release();
  await assert.rejects(()=>pending,/Ситуация изменилась/);assert.equal(f.state.multiplayer.tactical.challenges.length,0);assert.ok(!f.state.multiplayer.tactical.log.some(e=>e.calculation?.kind==='check'));
+});
+
+test('D&D drops the connection mid-preparation, rejects the stale work, then rolls only once across a second resume',async t=>{
+ const {once}=await import('node:events');
+ const {WebSocket}=await import('ws');
+ let release,started,calls=0;
+ const ready=new Promise(resolve=>started=resolve),waiting=new Promise(resolve=>release=resolve);
+ const f=await multiplayerFixture(t,{delay:()=>{if(++calls===1){started();return waiting;}}});
+ const guest={...persona,id:'dnd-reconnect-sheet',name:'Лира'};
+ const otherGuest={...persona,id:'second-dnd-reconnect-sheet',name:'Торк'};
+ const sockets=[];
+ t.after(()=>{release();for(const socket of sockets)socket.terminate();});
+ const host=f.room.status();
+ const receive=(socket,filter)=>new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>{socket.off('message',listener);reject(new Error('Timed out waiting for room event'));},4000);
+  function listener(raw){const data=JSON.parse(raw); if(filter(data)){clearTimeout(timer);socket.off('message',listener);resolve(data);}}
+  socket.on('message',listener);
+ });
+ const connect=async(sheet,resumeToken)=>{
+  const socket=new WebSocket('ws://127.0.0.1:'+host.port+'/ws');
+  sockets.push(socket);await once(socket,'open');
+  const ready=receive(socket,d=>d.type==='state');
+  socket.send(JSON.stringify({type:'join',code:host.code,name:'Account-'+sheet.name,persona:sheet,resumeToken}));
+  const joined=await ready;
+  return {socket,id:joined.selfId,token:joined.resumeToken};
+ };
+ const send=(client,data)=>{const response=receive(client.socket,d=>d.requestId===data.requestId&&['ack','error'].includes(d.type));client.socket.send(JSON.stringify(data));return response;};
+ const first=await connect(guest),second=await connect(otherGuest);
+ const initial=f.state,game=initial.multiplayer.tactical;
+ game.order=[first.id,second.id,'host'];game.turn=0;game.phase='players';
+ f.save(initial);
+ assert.equal((await send(first,{type:'message',requestId:'intent',content:'Прошу торговца снизить цену меча.'})).type,'ack');
+ first.socket.send(JSON.stringify({type:'dice',requestId:'lost-before-commit',sides:20}));
+ await ready;
+ const disconnected=receive(second.socket,d=>d.room?.tactical?.actors?.some(actor=>actor.id===first.id&&actor.online===false));
+ first.socket.terminate();await disconnected;
+ release();
+ const idle=()=>!f.room.status().generating;
+ for(let attempt=0;!idle()&&attempt<100;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+ assert.ok(idle());
+ assert.equal(f.state.multiplayer.tactical.challenges.length,0);
+ assert.equal(f.state.multiplayer.tactical.order[f.state.multiplayer.tactical.turn],first.id);
+
+ const back=await connect(guest,first.token);assert.equal(back.id,first.id);
+ assert.equal((await withD20(1,()=>send(back,{type:'dice',requestId:'single-committed',sides:20}))).type,'ack');
+ const offAgain=receive(second.socket,d=>d.room?.tactical?.actors?.some(actor=>actor.id===first.id&&actor.online===false));
+ back.socket.terminate();await offAgain;
+ const resumed=await connect(guest,first.token);
+ const duplicate=await send(resumed,{type:'dice',requestId:'retry-after-reconnect',sides:20});
+ assert.equal(duplicate.type,'error');assert.match(duplicate.error,/уже выполнена/);
+ const events=f.state.multiplayer.tactical.log.filter(e=>e.calculation?.kind==='check');
+ assert.equal(events.length,1);
+ assert.equal(events[0].calculation.roll,1);
+ assert.equal(events[0].calculation.critical,'failure');
+ assert.equal(f.state.multiplayer.messages.filter(m=>m.dice?.eventId===events[0].id).length,1);
+ assert.equal(calls,2);
+ assert.equal(f.state.multiplayer.tactical.order[f.state.multiplayer.tactical.turn],first.id);
 });

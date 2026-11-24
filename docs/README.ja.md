@@ -6,7 +6,7 @@
 
 SAS はキャラクターカード、プレイヤーのペルソナ、世界設定、記憶、イラスト、読み上げをまとめたローカル環境です。手元の GGUF モデルや互換 API を利用し、友人を同じ物語に招待できます。
 
-[Windows 版 SAS 0.9.11 をダウンロード](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.11/SAS-Windows-0.9.11.zip) · [リリース一覧](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [ユーザーガイド](USER-GUIDE.md)
+[Windows 版 SAS 0.9.12 をダウンロード](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.12/SAS-Windows-0.9.12.zip) · [リリース一覧](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [ユーザーガイド](USER-GUIDE.md)
 
 ## 主な機能
 
@@ -14,6 +14,8 @@ SAS はキャラクターカード、プレイヤーのペルソナ、世界設�
 - **ファンフィクション：** 作品・シーズン・エピソードの整理、登場人物と原作設定の管理、本文の承認。
 - **マルチプレイ：** ロビー、共同 RP・D&D セッション、ホスト用ツール、音楽、ボイスチャット。
 - **D&D・独自の TRPG：** ストーリーブック、ルール、戦術マップ、イニシアチブ、所持品、サーバー側での行動判定。
+- **アーカイブ記憶（ベータ 2）：** 進行中の物語の記録から、確認できる出来事を検索します。
+- **新しい遊び方：** イラスト付きのファンフィクション用テンプレート、複数キャラクターの共有ルーム、GM のスタイル、D&D スタジオの 3D ダイス。
 - **モデルとメディア：** CPU/CUDA/Vulkan 対応の llama.cpp、互換 API、任意のローカル埋め込みモデル、ComfyUI 画像生成、読み上げエンジン。
 - **拡張機能：** SAS API 2 によるパネル、ページ、コマンド、外観、サーバー機能の追加。
 
@@ -21,11 +23,11 @@ SAS はキャラクターカード、プレイヤーのペルソナ、世界設�
 
 ## Windows へのインストール
 
-1. Windows 10/11 x64 用の **SAS-Windows-0.9.11.zip** をダウンロードします。
+1. Windows 10/11 x64 用の **SAS-Windows-0.9.12.zip** をダウンロードします。
 2. 全体を専用のフォルダーに展開し、**SAS.exe** を起動します。<code>app/</code> と <code>engines/</code> は同じ場所に置いてください。
 3. 設定の「モデルと API」で GGUF モデルまたは API 接続を設定します。
 
-配布パッケージの実行に Node.js やビルド作業は不要です。小容量の **SAS-Start-0.9.11.zip** は、<code>Start-SAS.cmd</code> の実行時に同じパッケージをダウンロードしてインストールします。この方法にはインターネット接続が必要です。会話用モデル、埋め込みモデル、ComfyUI は別途選択します。
+配布パッケージの実行に Node.js やビルド作業は不要です。小容量の **SAS-Start-0.9.12.zip** は、<code>Start-SAS.cmd</code> の実行時に同じパッケージをダウンロードしてインストールします。この方法にはインターネット接続が必要です。会話用モデル、埋め込みモデル、ComfyUI は別途選択します。
 
 ブラウザー版は <code>Start-SAS-Web.cmd</code> で起動します。既定のアドレスは **http://127.0.0.1:3212** です。<code>Stop-SAS-Web.cmd</code> で停止、<code>Repair-SAS.cmd</code> でファイルの検査・復元ができます。更新前にはデータをバックアップしてください。
 

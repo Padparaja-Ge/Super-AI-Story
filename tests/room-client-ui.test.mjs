@@ -62,3 +62,22 @@ test('New text does not drag a reader away from earlier chat messages',()=>{
  ui.container.scrollTop=850;ui.addMessage({id:'next',role:'assistant',name:'Ведущий',content:'Следующий ответ'});
  assert.equal(ui.container.scrollTop,1000);
 });
+
+
+test('Browser big-room messages keep the speaking character avatar through streaming and edits',()=>{
+ const ui=fixture();ui.room.cast=[{id:'iris',name:'Ирис',avatar:'☾'},{id:'atlas',name:'Атлас',avatar:'♜'}];
+ ui.addMessage({id:'first',role:'assistant',userId:'narrator',characterId:'iris',name:'Ирис',content:'Первая реплика.'});
+ ui.addMessage({id:'second',role:'assistant',userId:'narrator',characterId:'atlas',name:'Атлас',content:'Ответ.'});
+ ui.addMessage({id:'first',role:'assistant',userId:'narrator',characterId:'iris',name:'Ирис',content:'Уточнённая реплика.',editedAt:'2026-11-17'});
+ assert.equal(ui.boxes.get('first').querySelector('.persona-avatar').textContent,'☾');
+ assert.equal(ui.boxes.get('second').querySelector('.persona-avatar').textContent,'♜');
+});
+
+
+test('Browser big-room recovery exports public cast IDs and cards without hidden prompt fields',()=>{
+ const recovery=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='recoveryBundle').getText(ast);
+ const context=vm.createContext({structuredClone,Date,archiveComplete:true,archive:new Map([['message',{id:'message',role:'assistant',characterId:'iris',content:'Добрый вечер.'}]]),participants:[],room:{id:'room',mode:'bigroom',cast:[{id:'iris',name:'Ирис',avatar:'☾',blocks:[{content:'PRIVATE_CARD_BLOCK'}],privateNote:'PRIVATE_NOTE'}],media:{},aiSettings:{secret:'HOST_SETTINGS'},connectionId:'PRIVATE_CONNECTION'}});
+ vm.runInContext(recovery,context);const result=JSON.parse(JSON.stringify(context.recoveryBundle()));
+ assert.deepEqual(result.room.cast,['iris']);assert.equal(result.characters[0].id,'iris');assert.deepEqual(result.characters[0].blocks,[]);assert.deepEqual(result.characters[0].lorebookIds,[]);
+ assert.doesNotMatch(JSON.stringify(result),/PRIVATE_CARD_BLOCK|PRIVATE_NOTE|HOST_SETTINGS|PRIVATE_CONNECTION/);
+});

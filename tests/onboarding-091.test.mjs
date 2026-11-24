@@ -58,6 +58,16 @@ test('Desktop microphone is audio-only and restricted to its own main frame',()=
   assert.equal(request('clipboard-sanitized-write'),true);
   assert.equal(check('clipboard-sanitized-write'),true);
   for(const name of ['clipboard-read','display-capture','geolocation','notifications'])assert.equal(request(name),false);
+  // Electron passes origins with a trailing slash; a raw string compare denied every microphone check,
+  // which hid local IPs behind mDNS and broke voice over Radmin VPN/Tailscale.
+  assert.equal(check('media',{mediaType:'audio',securityOrigin:origin+'/'},origin+'/'),true);
+  assert.equal(check('media',{mediaType:'audio',requestingUrl:'',securityOrigin:origin+'/'},origin+'/'),true);
+  assert.equal(request('media',{mediaTypes:['audio'],requestingUrl:'',securityOrigin:origin+'/'}),true);
+  assert.equal(check('media',{mediaType:'audio',requestingUrl:'https://elsewhere.example/',securityOrigin:origin+'/'},origin+'/'),false);
+  assert.equal(check('speaker-selection',{},origin+'/'),true);
+  assert.equal(request('speaker-selection'),true);
+  assert.equal(check('media',{mediaType:'audio',requestingUrl:'',securityOrigin:'http://evil.example/'},'http://evil.example/'),false);
+  assert.equal(check('media',{mediaType:'video'},origin+'/'),false);
 });
 
 test('Desktop manual autosave close supports Save, Discard and Cancel without hidden writes',async()=>{

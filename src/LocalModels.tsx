@@ -66,6 +66,7 @@ export function LocalModels({state,update,flush,notify,local,directories,runtime
     {runtime.ready&&<p className="local-runtime-active">{t("Работающий шаблон: ")}<strong>{templateName(runtime.effectiveOptions?.chatTemplate)}</strong>{runtime.effectiveOptions?.chatTemplate!==launch.chatTemplate&&<>{t(" · После перезапуска: ")}<strong>{templateName(launch.chatTemplate)}</strong></>}</p>}
     {runtime.progress&&<><p>{runtime.progress.stage||t('Загрузка компонентов')}</p><progress max={runtime.progress.total||1} value={runtime.progress.downloaded||0}/></>}
     {runtime.compatibility==='qwen35-mrope-4'&&<p className="muted">{t("Qwen3.5: используется совместимая копия GGUF с исправленным заголовком MRoPE. Исходный файл сохранён. Копия находится в папке загрузки моделей, в .sas-compat.")}</p>}
+    {runtime.compatibility==='qwen35-ollama'&&<p className="muted">{t("Qwen3.5: файл собран для Ollama, поэтому используется совместимая копия в формате llama.cpp без встроенных зрения и MTP. Веса текстовой модели не изменены, исходный файл сохранён. Копия находится в папке загрузки моделей, в .sas-compat.")}</p>}
     {(error||runtime.error)&&<p className="error-box" role="alert">{error||t(runtime.error)}</p>}
     <Field label={t("Аппаратное устройство")} hint={t("Автоматический режим выбирает доступный GPU. NVIDIA использует CUDA; совместимые AMD и Intel — Vulkan. Можно выбрать процессор.")}>
       <select value={chosen} disabled={locked||!hardware} onChange={e=>update(s=>{s.settings.localDevice=e.target.value;})}>

@@ -10,6 +10,7 @@ import {installVoicePresets,restoreVoicePresets,presets} from './presets.mjs';
 import {SpeechRuntime} from './runtime.mjs';
 import {createSileroSupport,validateSilero} from './silero.mjs';
 import {sileroModel} from '../../shared/silero.mjs';
+import {speechBundleDirectory,speechStorageDirectory} from './storage.mjs';
 import {safeFolder,downloadFile,installPythonRuntime,MAX_MODEL_BYTES,FISH_SOURCE_FOLDER} from './installer.mjs';
 const catalog=JSON.parse(await fs.readFile(new URL('./catalog.json',import.meta.url),'utf8')).filter(m=>speechProviderEnabled(m.id));
 const names={'kokoro-ru':'Kokoro RU','kokoro':'Kokoro-82M',xtts:'XTTS v2',fish:'Fish Speech 1.5'};
@@ -36,7 +37,7 @@ export function validateSpeech(value){
   }
  }return s;
 }
-export function createSpeechService({dataDir,getState,saveState,getModelsDir,runSpeech,installRuntime=installPythonRuntime,installSileroEngine,preparePresets=installVoicePresets,bundledRoot=process.env.SAS_SPEECH_BUNDLE_DIR||(process.resourcesPath?path.join(process.resourcesPath,'speech'):path.resolve(import.meta.dirname,'../../runtime/speech'))}={}){
+export function createSpeechService({dataDir,getState,saveState,getModelsDir,runSpeech,installRuntime=installPythonRuntime,installSileroEngine,preparePresets=installVoicePresets,bundledRoot=speechBundleDirectory()}={}){
  const router=express.Router(),runtime=new SpeechRuntime(),sessions=new Map(),cancelled=new Map(),cache=new Map(),jobs=new Map();let queue=Promise.resolve(),queued=0,cacheBytes=0;const benchmarks={};
  const registryPath=path.join(dataDir,'tts-models.json'),referenceDir=path.join(dataDir,'tts-references');let bootstrap,registryQueue=Promise.resolve();
  const readRegistry=()=>fs.readFile(registryPath,'utf8').then(JSON.parse).catch(e=>{if(e.code==='ENOENT')return {};throw e;});
@@ -51,7 +52,7 @@ export function createSpeechService({dataDir,getState,saveState,getModelsDir,run
   }catch(e){await fs.unlink(temporary).catch(()=>{});throw e;}
  }
  function updateRegistry(change){const next=registryQueue.then(async()=>{const value=await readRegistry();change(value);await writeRegistry(value);});registryQueue=next.catch(()=>{});return next;}
- async function root(){return path.join(await getModelsDir(),'sas-tts');}
+ async function root(){return speechStorageDirectory(await getModelsDir());}
  const silero=createSileroSupport({root,bundledRoot,readRegistry,updateRegistry,installRuntime:installSileroEngine,requireWeights:!runSpeech});
  async function prepareDefaults(){return bootstrap||=(async()=>{if(!bundledRoot)return;const registry=await readRegistry();for(const id of ['kokoro-ru','kokoro'].filter(speechProviderEnabled)){if(registry[id]?.folder&&await fs.stat(path.join(registry[id].folder,'sas-installed.json')).catch(()=>null))continue;const bundled=path.join(bundledRoot,'models',id);if(!await fs.stat(path.join(bundled,'sas-installed.json')).catch(()=>null))continue;const destination=await safeFolder(await root(),'models',id),m=catalog.find(m=>m.id===id);for(const f of m.files){const target=path.join(destination,...f.path.split('/'));await safeFolder(destination,...f.path.split('/').slice(0,-1));await fs.copyFile(path.join(bundled,...f.path.split('/')),target,1).catch(e=>{if(e.code!=='EEXIST')throw e;});}await fs.copyFile(path.join(bundled,'sas-installed.json'),path.join(destination,'sas-installed.json'));await updateRegistry(latest=>{latest[id]={...latest[id],folder:destination};});}})().catch(e=>{bootstrap=undefined;throw e;});}
  async function folder(id){await prepareDefaults();const registry=await readRegistry();return registry[id]?.folder||path.join(await root(),'models',id);}
@@ -72,7 +73,7 @@ export function createSpeechService({dataDir,getState,saveState,getModelsDir,run
    finally{clearInterval(timer);try{await persist({...publicJob(job),...outcome});}catch(error){outcome={status:'error',error:'Не удалось сохранить установку: '+error.message};}Object.assign(job,outcome);job.controller=null;}
   })();return publicJob(job);
  }
- async function references(){await fs.mkdir(referenceDir,{recursive:true});const files=await fs.readdir(referenceDir);const result=[];for(const file of files.filter(f=>f.endsWith('.json'))){const item=JSON.parse(await fs.readFile(path.join(referenceDir,file),'utf8'));result.push({id:item.id,name:item.name,text:item.text,duration:item.duration,preset:!!item.preset,source:item.source,license:item.license});}return result;}
+ async function references(){await fs.mkdir(referenceDir,{recursive:true});const files=await fs.readdir(referenceDir);const result=[];for(const file of files.filter(f=>f.endsWith('.json'))){const item=JSON.parse(await fs.readFile(path.join(referenceDir,file),'utf8'));result.push({id:item.id,name:item.name,text:item.text,duration:item.duration,preset:!!item.preset,gender:item.gender,source:item.source,license:item.license});}return result;}
  async function status(){await recoverInstalls();await prepareDefaults();const registry=await readRegistry(),storage=await root(),models=[];await restoreVoicePresets(storage,referenceDir);
   for(const m of catalog){const installedFolder=registry[m.id]?.folder||path.join(storage,'models',m.id),ready=await fs.stat(path.join(installedFolder,'sas-installed.json')).catch(()=>null),voices=m.files.filter(f=>f.path.startsWith('voices/')).map(f=>path.basename(f.path,'.bin'));const runtimePaths=registry[m.id]?.runtimes||{};
    const runtimeReady={};for(const device of ['cpu','gpu']){const runtime=runtimePaths[device]||path.join(storage,'runtime',`${m.id}-${device}`);const marker=await fs.readFile(path.join(runtime,'sas-ready.json'),'utf8').then(raw=>JSON.parse(raw)).catch(()=>null);runtimeReady[device]=marker?.version===4&&marker.provider===m.id&&marker.device===device&&!!await fs.stat(path.join(runtime,process.platform==='win32'?'Scripts/python.exe':'bin/python')).catch(()=>null);}
@@ -125,6 +126,7 @@ export function createSpeechService({dataDir,getState,saveState,getModelsDir,run
   if(!result.audio||result.audio.length>15_000_000)throw fail('Некорректное аудио от модели.',502);cache.set(key,result);cacheBytes+=result.audio.length;while(cacheBytes>16_000_000&&cache.size){const first=cache.keys().next().value;cacheBytes-=cache.get(first).audio.length;cache.delete(first);}return result;
  }
  const route=handler=>async(req,res,next)=>{try{await handler(req,res);}catch(e){next(e);}};
+ router.get('/references',route(async(req,res)=>res.json({references:await references()})));
  router.get('/status',route(async(req,res)=>res.json(await status())));
  router.post('/install',route(async(req,res)=>res.status(202).json(await install(req.body?.provider,req.body?.device||'cpu',{runtimeOnly:req.body?.runtimeOnly===true,modelId:req.body?.modelId}))));
  router.post('/install/:id/cancel',route(async(req,res)=>{const job=jobs.get(req.params.id);job?.controller?.abort();await job?.promise;res.json({ok:true});}));

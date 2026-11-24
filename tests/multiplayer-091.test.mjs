@@ -49,6 +49,21 @@ test('Explicit GM corrections are audited and never reroll or reapply damage',as
  correctRoom(room,{kind:'dice',messageId:'die',value:17,reason:'Мастер исправляет результат'});assert.equal(room.messages[0].dice.value,17);assert.equal(g.actors[0].hp,hp);assert.throws(()=>correctRoom(room,{kind:'dice',messageId:'die',value:21,reason:'Неверный кубик'}));
  correctRoom(room,{kind:'actor',actorId:'host',patch:{hp:3,actions:0},reason:'Исправление сбоя'});assert.equal(g.actors[0].hp,3);assert.equal(g.actors[0].actions,0);assert.equal(room.corrections.length,3);assert.ok(g.eventArchive.filter(e=>e.calculation?.kind==='host-correction').length===3);assert.throws(()=>correctRoom(room,{kind:'actor',actorId:'host',patch:{hp:10000},reason:'Неверное здоровье'}));
 });
+test('Changing one house rule preserves the other rules, spent actions and fallen heroes',async t=>{
+ const f=await setup(t,{mode:'custom',lobby:false});
+ f.room.configure({rules:{hp:50,slowActions:3,fastActions:5,move:8,checkDie:12}});
+ const state=f.state,actor=state.multiplayer.tactical.actors[0];
+ Object.assign(actor,{hp:0,actions:1,fastActions:2,bonusActions:2,move:3,baseArmor:12});
+ f.saveState(state);
+ f.room.configure({rules:{hp:55,restHp:true}});
+ const game=f.state.multiplayer.tactical,updated=game.actors[0];
+ assert.equal(game.rules.checkDie,12);
+ assert.equal(game.rules.restHp,true);
+ assert.deepEqual([updated.hp,updated.maxHp,updated.actions,updated.fastActions,updated.move,updated.baseArmor],[0,55,1,2,3,12]);
+ f.room.configure({rules:{slowActions:4,fastActions:6,move:10}});
+ const resized=f.state.multiplayer.tactical.actors[0];
+ assert.deepEqual([resized.hp,resized.actions,resized.fastActions,resized.bonusActions,resized.move],[0,2,3,3,5]);
+});
 test('Campaign backups honor autosave OFF, bounded retention, manual snapshots and restore isolation',async t=>{
  const f=await setup(t,{lobby:false,autosave:false});f.room.hostMessage('Не должно быть записано автоматически');await new Promise(r=>setTimeout(r,300));assert.deepEqual((await f.room.backups()).backups,[]);
  const bundle=await f.room.backup();assert.ok((await f.room.backups()).backups.length>0);assert.equal(bundle.room.playerSessions,undefined);assert.equal(bundle.room.connectionId,undefined);assert.equal(bundle.room.media,undefined);

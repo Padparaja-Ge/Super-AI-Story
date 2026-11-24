@@ -4,6 +4,7 @@ import { getConnection, streamCompletion } from './llm.mjs';
 import { inferScene } from './language.mjs';
 import {fitNarrationPrompt} from './room-narration.mjs';
 import {createTextContinuationJoiner} from './text-continuation.mjs';
+import {archiveMemoryEnabled} from './archive-recall.mjs';
 export const chatResumeInstruction='ДОПИСЫВАНИЕ ОБОРВАННОГО ОТВЕТА ПЕРСОНАЖА. Продолжи ровно с места обрыва: сначала закончи последнее слово или предложение. Выдай только недостающий текст на том же языке, без повторения и пересказа, без нового хода. Не пиши действия, решения, мысли и реплики игрока.';
 
 export function createGeneration({getState,saveState,getSecret,tasks,preparePrompt,translationService,memory,memoryDue,stream=streamCompletion,fit=fitNarrationPrompt}) {
@@ -84,7 +85,12 @@ export function createGeneration({getState,saveState,getSecret,tasks,prepareProm
           try{const current=getState(), target=current.chats.find(c=>c.id===chatId);const patch=await inferScene(current,target,getSecret,signal);if(patch){const fresh=getState();Object.assign(fresh.chats.find(c=>c.id===chatId).scene,patch);saveState(fresh);}}
           catch(error){job.warnings.push('Ответ сохранён. Сцену можно поправить вручную: '+error.message);}
         }
-        if(!signal.aborted&&memory&&memoryDue?.(getState().chats.find(c=>c.id===chatId))){try{await memory.summarize(chatId,{signal,onProgress:stage=>{job.stage=stage;}});}catch(error){job.warnings.push('Ответ сохранён. Память: '+error.message);}}
+        const latestChat=getState().chats.find(c=>c.id===chatId);
+        if(!signal.aborted&&memory&&memoryDue?.(latestChat)){
+          try{
+            await memory.summarize(chatId,{signal,maxBlocks:archiveMemoryEnabled(latestChat?.memorySettings)?1:Infinity,onProgress:stage=>{job.stage=stage;}});
+          }catch(error){job.warnings.push('Ответ сохранён. Память: '+error.message);}
+        }
         return {messageId:assistantId,incomplete:false};
       }catch(error){
         if(saved){if(job.text)putAssistant(true,signal.aborted?'stopped':error.code==='RESPONSE_REPETITION'?'repetition':'network');else if(previous&&!persisted){const current=getState();current.chats.find(c=>c.id===chatId)?.messages.push(previous);saveState(current);}}

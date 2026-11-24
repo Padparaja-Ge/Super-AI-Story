@@ -3,7 +3,8 @@ import {structuredCompletion} from './services/structuredCompletion.js';
 export const playerCounts=['2','2-4','4-8','8-12'];
 export function validateStorybook(value){
  if(!value||typeof value!=='object'||!playerCounts.includes(value.playerCount))throw new Error('Выберите число игроков Story book.');
- const book={id:String(value.id||crypto.randomUUID()),playerCount:value.playerCount};
+ // kind: 'adventure' (D&D / НРИ) or 'bigroom' (a shared story for several characters in a big room).
+ const book={id:String(value.id||crypto.randomUUID()),playerCount:value.playerCount,kind:value.kind==='bigroom'?'bigroom':'adventure'};
  for(const field of ['name','world','start','goal','details']){if(typeof value[field]!=='string'||value[field].length>(field==='name'?120:8000))throw new Error('Неверный блок Story book: '+field);book[field]=value[field].trim();}
  if(!book.name||!book.world||!book.start||!book.goal)throw new Error('Заполните название, мир, стартовую локацию и цель.');return book;
 }

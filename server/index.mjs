@@ -4,6 +4,7 @@ import {mapPNG} from './battlemap.mjs';
 import express from 'express';
 import {createMemory,memoryDue} from './memory.mjs';
 import {createEmbeddings} from './embeddings.mjs';
+import {recallChatArchive} from './chat-archive.mjs';
 import {createWizard} from './wizard.mjs';
 import {createFanfic} from './fanfic.mjs';
 import {createFanficImages} from './fanfic-images.mjs';
@@ -33,6 +34,7 @@ import {createRoomNetwork} from './room-network.mjs';
 import {createRoomDiscovery} from './room-discovery.mjs';
 import {createGuidePreferences} from './onboarding.mjs';
 import {createInterfaceLanguage} from './interface-language.mjs';
+import {createModelShare} from './model-share.mjs';
 
 const isLoopback = address => address === '::1' || /^127\./.test(address || '') || /^::ffff:127\./.test(address || '');
 
@@ -70,7 +72,8 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   const diagnostics=createDiagnostics({dataDir:store.dataDir||dataDir});
   const tasks = createTasks({ flush:()=>store.autoCheckpoint?store.autoCheckpoint('task'):store.flush?.(),record:diagnostics.record });
   const leases = new Map(); let lastLease = Date.now();
-  const getSecret = id => secrets.get(id) || '';
+  const getSecret = id => modelShare.recipientKey(id) ?? secrets.get(id) ?? '';
+  const modelShare = createModelShare({ getState, saveState, getSecret, assertIdle: tasks.assertIdle, hostBusy: tasks.busy });
   const translationService = suppliedTranslationService || createTranslationService({ getLegacyEndpoint: () => String(getState().settings.translation.baseUrl || '').replace(/\/$/, '') + '/translate' });
   const memory=createMemory({getState,saveState,getSecret});
   const embeddings=createEmbeddings({dataDir:store.dataDir||dataDir,getSecret});
@@ -183,14 +186,18 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   async function preparePrompt(state, chatId, content = '', options = {}) {
     const extra=await extensions.prompt(options.extensionMode||'roleplay',{chatId,content});
     if(extra)options={...options,extraInstructions:[options.extraInstructions,extra].filter(Boolean).join('\n\n')};
-    const chat=state.chats.find(c=>c.id===chatId);let retrieval={},warnings=[];
+    const chat=state.chats.find(c=>c.id===chatId);let retrieval={},warnings=[],archiveRecall;
     if(options.retrieval)retrieval=options.retrieval;
-    else try{retrieval=await embeddings.retrieve(state,chat,content,options.signal,{includeSources:true});}catch(e){if(options.signal?.aborted)throw e;warnings.push('Векторный поиск: '+e.message+' Использованы ключевые слова и недавние воспоминания.');}
+    else try{
+      const staged=chat&&await recallChatArchive(state,chat,content,options.signal,embeddings);
+      if(staged){retrieval=staged.retrieval;warnings=staged.warnings;archiveRecall=staged.report.archiveRecall;}
+      else retrieval=await embeddings.retrieve(state,chat,content,options.signal,{includeSources:true});
+    }catch(e){if(options.signal?.aborted)throw e;warnings.push('Векторный поиск: '+e.message+' Использованы ключевые слова и недавние воспоминания.');}
     const connection=getConnection(state,chat);
     const focused=options.roleplay&&focusedRoleplay(connection,state.settings),character=state.characters.find(c=>c.id===chat?.characterId),persona=state.personas.find(p=>p.id===(chat?.personaId||character?.personaId));
     const input=focused?uniqueSentences(content):content;
     const rules=enabledRegex(state);
-    const build=async extra=>{const result=buildPrompt(state,chatId,input,{...options,...retrieval,...extra});if(focused){if(rules.length)for(let i=0;i<result.messages.length;i++){const m=result.messages[i];if(m.role==='user'||m.role==='assistant')m.content=await applyRegex(m.content,rules,m.role==='user'?'input':'output',{mode:'prompt',depth:result.messages.length-i-1,macros:{char:character?.name||'',user:state.settings.userName}});}result.messages=roleplayMessages(result.messages,{characterName:character?.name,playerName:persona?.name||state.settings.userName,maxTokens:result.budget.maxTokens,sourceExcerpts:retrieval.sourceExcerpts,archive:chat?.messages});result.estimatedTokens=messageTokens(result.messages);result.roleplayAdapter='focused-alpaca';}result.warnings=warnings;return result;};
+    const build=async extra=>{const result=buildPrompt(state,chatId,input,{...options,...retrieval,...extra});if(focused){if(rules.length)for(let i=0;i<result.messages.length;i++){const m=result.messages[i];if(m.role==='user'||m.role==='assistant')m.content=await applyRegex(m.content,rules,m.role==='user'?'input':'output',{mode:'prompt',depth:result.messages.length-i-1,macros:{char:character?.name||'',user:state.settings.userName}});}result.messages=roleplayMessages(result.messages,{characterName:character?.name,playerName:persona?.name||state.settings.userName,maxTokens:result.budget.maxTokens,sourceExcerpts:result.includedSourceExcerpts??retrieval.sourceExcerpts,archive:chat?.messages});result.estimatedTokens=messageTokens(result.messages);result.roleplayAdapter='focused-alpaca';}result.warnings=warnings;return result;};
     let prompt=await build({allowOverflow:connection.id==='sas-local'});
     if(connection.id==='sas-local'&&!retrieval.gameRag){
       const limit=prompt.budget.contextWindow-prompt.budget.maxTokens-32;
@@ -204,7 +211,8 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
         prompt=await build({inputBudget,allowOverflow:true});
       }
     }
-    prompt.sourceExcerpts=retrieval.sourceExcerpts||[];
+    prompt.sourceExcerpts=prompt.includedSourceExcerpts??retrieval.sourceExcerpts??[];
+    if(archiveRecall)prompt.archiveRecall=archiveRecall;
     if (rules.length&&!focused) {
       const chat = state.chats.find(item => item.id === chatId);
       const character = state.characters.find(item => item.id === chat?.characterId);
@@ -279,7 +287,8 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.post('/api/multiplayer/media',async(req,res)=>res.json(await multiplayer.mediaCommand(req.body)));
   app.post('/api/multiplayer/voice',async(req,res)=>res.json(await multiplayer.voiceCommand(req.body)));
   app.get('/api/multiplayer/audio/:id',async(req,res)=>multiplayer.audio(req,res,new URL('http://localhost/api/multiplayer/audio/'+encodeURIComponent(req.params.id))));
-  app.post('/api/multiplayer/generate', async (req, res) => {const task=tasks.run({kind:'multiplayer',stage:'Ведущий пишет ответ'},signal=>multiplayer.generate({...req.body,signal}));res.json(await task.promise);});
+  app.post('/api/multiplayer/converse', async (req, res) => {const task=tasks.run({kind:'multiplayer',stage:'Персонажи ведут беседу'},signal=>multiplayer.converse({count:req.body?.count,speakerId:req.body?.speakerId,signal}));res.json(await task.promise);});
+  app.post('/api/multiplayer/generate', async (req, res) => {const task=tasks.run({kind:'multiplayer',stage:'Ведущий пишет ответ'},signal=>multiplayer.generate({...req.body,chained:false,signal}));res.json(await task.promise);});
   app.post('/api/multiplayer/message', (req, res) => res.json(multiplayer.hostMessage(req.body?.content)));
   app.use('/api', createLanguageRouter({getState,saveState,getSecret,secrets,tasks}));
   const comfyRouter = createComfyRouter({getState,saveState,getSecret,tasks,dataDir:store.dataDir || dataDir,onRoomImage:image=>multiplayer.publishImage(image)});
@@ -290,6 +299,13 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   app.post('/api/multiplayer/summarize',async(req,res)=>{const task=tasks.run({kind:'room-summary',stage:'Память комнаты'},(signal,job)=>multiplayer.summarizeMemory({signal,onProgress:stage=>{job.stage=stage;}}));if(req.body?.background)return res.status(202).json(task.job);res.json(await task.promise);});
   app.put('/api/multiplayer/messages/:id',(req,res)=>res.json(multiplayer.editMessage(req.params.id,req.body?.content)));
   app.post('/api/multiplayer/players/:id',(req,res)=>res.json(multiplayer.moderate(req.params.id,req.body?.action)));
+  app.post('/api/multiplayer/campaign', async(req,res)=>{
+    const controller=new AbortController();
+    const cancel=()=>controller.abort();
+    res.once('close',cancel);
+    try{res.json(await multiplayer.campaignAction(req.body,AbortSignal.any([controller.signal,AbortSignal.timeout(120_000)])));}
+    finally{res.off('close',cancel);}
+  });
   app.post('/api/multiplayer/game',async(req,res)=>res.json(await multiplayer.act(req.body)));
   app.post('/api/multiplayer/client/game',async(req,res)=>res.json(await multiplayerClient.command('game',req.body)));
   app.post('/api/multiplayer/map',async(req,res)=>{const task=tasks.run({kind:'battlemap',stage:'Создаём карту'},(signal,job)=>multiplayer.makeMap({...req.body,signal,onProgress:stage=>{job.stage=stage;}}));res.status(202).json(task.job);});
@@ -330,6 +346,7 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
   const integrationRouter = createIntegrationRouter({ getState, saveState, getSecret, tasks, setSecret:(id,key)=>secrets.set(id,key), dataDir: store.dataDir || dataDir });
   const speech=createSpeechService({dataDir:store.dataDir||dataDir,getState,saveState,getModelsDir:integrationRouter.modelsDirectory});
   app.use('/api/speech',speech.router);
+  app.use('/api/model-share', modelShare.router);
   app.use('/api', integrationRouter);
   app.use('/api', (req, res) => res.status(404).json({ error: 'Метод API не найден.' }));
   const dist = path.join(projectRoot, 'dist');
@@ -342,7 +359,7 @@ export function createApp({ dataDir = defaultDataDir, store: suppliedStore, tran
     if (res.headersSent) return next(error);
     res.status(error.status && error.status >= 400 && error.status < 600 ? error.status : 400).json({ error: error.type === 'entity.too.large' ? 'Файл или запрос слишком большой.' : error.message || 'Не удалось выполнить запрос.' });
   });
-  app.locals.runtime = { store, multiplayer, diagnostics,roomNetwork,discovery,secrets, active, tasks, speech, extensions, leases, lastLease:()=>{for(const [id,expires] of leases)if(expires<Date.now())leases.delete(id);return lastLease;}, close: async () => { try { translationService.close(); await speech.close(); await tasks.stop(); await extensions.close(); await comfyRouter.close(); for (const controller of active.values()) controller.abort(); await roomNetwork.close();await discovery.close();await multiplayer.stop(); await multiplayerClient.close(); if (integrationRouter.close) await integrationRouter.close(); secrets.clear(); } finally { try{if(store.close)await store.close();await store.flush?.();}finally{await diagnostics.close();} } } };
+  app.locals.runtime = { store, multiplayer, diagnostics,roomNetwork,discovery,secrets, active, tasks, speech, extensions, leases, lastLease:()=>{for(const [id,expires] of leases)if(expires<Date.now())leases.delete(id);return lastLease;}, close: async () => { try { translationService.close(); await modelShare.close(); await speech.close(); await tasks.stop(); await extensions.close(); await comfyRouter.close(); for (const controller of active.values()) controller.abort(); await roomNetwork.close();await discovery.close();await multiplayer.stop(); await multiplayerClient.close(); if (integrationRouter.close) await integrationRouter.close(); secrets.clear(); } finally { try{if(store.close)await store.close();await store.flush?.();}finally{await diagnostics.close();} } } };
   return app;
 }
 

@@ -41,7 +41,11 @@ export async function readGguf(file){
     const experts=get('expert_count'),activeExperts=get('expert_used_count'),layers=get('block_count'),embeddingLength=get('embedding_length'),heads=get('attention.head_count'),kvHeads=get('attention.head_count_kv')||heads;
     if(layers>4096)throw new Error('Некорректное число слоёв GGUF.');
     const info={version,architecture,name:String(meta['general.name']||''),chatTemplate:String(meta['tokenizer.chat_template']||''),size:stat.size,parameterCount,contextLength:get('context_length'),layers,embeddingLength,heads,kvHeads,keyLength:get('attention.key_length')||(heads?embeddingLength/heads:0),valueLength:get('attention.value_length')||(heads?embeddingLength/heads:0),experts,activeExperts,isMoe:experts>0,expertBytes,expertLayerBytes:Array.from({length:layers},(_,i)=>layerBytes.get(i)||0),nonExpertBytes:stat.size-expertBytes,activeParameters:experts&&activeExperts?parameterCount-expertParameters+expertParameters*activeExperts/experts:parameterCount,splitCount:Number(meta['split.count'])||1,kvLoraRank:get('attention.kv_lora_rank'),sharedExperts:get('expert_shared_count'),layerwiseAttention:['attention.head_count','attention.head_count_kv','attention.key_length','attention.value_length'].some(k=>arrayKeys.has(architecture+'.'+k)),hasRecurrentState:Object.keys(meta).some(k=>k.startsWith(architecture+'.ssm.'))};
-    if(ropeSectionsLayout)Object.assign(info,{ropeSections:meta[ropeSectionsLayout.key],ropeSectionsLayout,headerSize:position,dataStart,alignment});
+    // Ollama single-file builds pack vision/MTP tensors and name the SSM dt bias without ".bias".
+    const packed={ssmDt:tensors.filter(t=>/^blk\.\d+\.ssm_dt$/.test(t.name)).length,vision:tensors.filter(t=>t.name.startsWith('v.')).length,mtp:tensors.filter(t=>t.name.startsWith('mtp.')).length};
+    if(packed.ssmDt||packed.vision||packed.mtp)info.ollamaLayout={...packed,vHeadReordered:meta[architecture+'.ssm.v_head_reordered']===true};
+    if(ropeSectionsLayout)Object.assign(info,{ropeSections:meta[ropeSectionsLayout.key],ropeSectionsLayout});
+    if(ropeSectionsLayout||info.ollamaLayout)Object.assign(info,{headerSize:position,dataStart,alignment});
     if(cached.size>100)cached.delete(cached.keys().next().value);cached.set(file,{signature,info});return info;
   }finally{await handle.close();}
 }

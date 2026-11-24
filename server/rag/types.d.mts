@@ -20,6 +20,8 @@ export interface ChunkMetadata {
     entryId?: string;
     memoryId?: string;
     messageKind?: string;
+    evidenceStatus?: 'engine' | 'approved-prose' | 'narration' | 'reference';
+    evidenceConflict?: boolean;
     automatic?: boolean;
     tokenization?: 'native' | 'approximate';
     nativeTokenLimit?: number;

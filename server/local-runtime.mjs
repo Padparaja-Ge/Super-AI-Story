@@ -24,6 +24,14 @@ export function recommendedDevice(devices){
   return [...devices].sort((a,b)=>score(b)-score(a)||b.freeMiB-a.freeMiB)[0];
 }
 export const modelAlias=modelPath=>path.basename(modelPath).replaceAll(',','_').slice(0,160)||'SAS';
+// Mistral [INST] templates and templates that raise on a later system message
+// (Qwen3/Qwen3.5: "System message must be at the beginning.") need every system
+// block merged into the first turn; SAS inserts lore and memory as system messages.
+export function localPromptFormat(template='',chatTemplate){
+  if(chatTemplate&&chatTemplate!=='gguf')return chatTemplate.startsWith('mistral-')?'single-system':'';
+  if(/### Instruction:/.test(template)&&/### Response:/.test(template))return 'alpaca';
+  return /\[INST\]/u.test(template)&&/system/u.test(template)||/System message must be at the beginning/u.test(template)?'single-system':'';
+}
 export function runtimeArgs({modelPath,context,gpuLayers,device,port,key,embedding=false,options={},modelInfo}){
   const layers=device.backend==='cpu'?'0':String(gpuLayers??'auto');
   const args=['-m',modelPath,'--host','127.0.0.1','--port',String(port),'--alias',modelAlias(modelPath),'--api-key',key,'-c',String(context),'--parallel','1','--device',device.device||'none','--split-mode','none','-ngl',layers==='-1'?'all':layers];
@@ -75,7 +83,7 @@ export function createLocalRuntime({dataDir,getState,saveState,setSecret=()=>{},
   const activate=(url,context,alias,modelInfo,options)=>{
     const state=getState();let connection=state.connections.find(c=>c.id===connectionId);
     if(!connection){connection={id:connectionId,name:embedding?'Векторизация SAS':'Локальная модель SAS',kind:'openai',temperature:.8,maxTokens:1024};state.connections.push(connection);}
-    Object.assign(connection,{baseUrl:url,model:alias,contextWindow:context});if(embedding){connection.embeddingTokenLimit=context;state.settings.embeddings={...state.settings.embeddings,connectionId,model:alias};}else{connection.promptFormat=options?.chatTemplate&&options.chatTemplate!=='gguf'?(options.chatTemplate.startsWith('mistral-')?'single-system':''):/### Instruction:/.test(modelInfo?.chatTemplate||'')&&/### Response:/.test(modelInfo?.chatTemplate||'')?'alpaca':/\[INST\]/u.test(modelInfo?.chatTemplate||'')&&/system/u.test(modelInfo?.chatTemplate||'')?'single-system':'';state.activeConnectionId=connection.id;}saveState(state);
+    Object.assign(connection,{baseUrl:url,model:alias,contextWindow:context});if(embedding){connection.embeddingTokenLimit=context;state.settings.embeddings={...state.settings.embeddings,connectionId,model:alias};}else{connection.promptFormat=localPromptFormat(modelInfo?.chatTemplate||'',options?.chatTemplate);state.activeConnectionId=connection.id;}saveState(state);
   };
   async function run(modelPath,settings){
     const signal=controller.signal;

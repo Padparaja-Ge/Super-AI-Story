@@ -79,7 +79,7 @@ export function createMultiplayerClient({getState,saveState,dataDir,canAutoSave=
         } else if(data.type==='ack') {
           const request=pending.get(data.requestId);if(request){clearTimeout(request.timer);request.resolve(status());pending.delete(data.requestId);session.lastError='';}
         } else if(data.type==='kicked') {session.lastError='Хост исключил вас из комнаты.';ws.close();}
-        if(saveState&&['state','participants'].includes(data.type)&&session.room?.tactical?.version===2){const own=session.room.tactical.actors.find(a=>a.id===session.selfId),state=getState(),p=state.personas.find(p=>p.id===personaId);if(own&&p){const update={level:own.level,className:own.className,abilities:own.abilities,inventory:own.inventory,spells:own.spells};if(JSON.stringify(update)!==JSON.stringify({level:p.level,className:p.className,abilities:p.abilities,inventory:p.inventory,spells:p.spells})){Object.assign(p,update);saveState(state);}}}
+        if(saveState&&['state','participants'].includes(data.type)&&session.room?.tactical?.version===2){const own=session.room.tactical.actors.find(a=>a.id===session.selfId),state=getState(),p=state.personas.find(p=>p.id===personaId);if(own&&p&&!own.campaignReplacement){const update={level:own.level,className:own.className,abilities:own.abilities,inventory:own.inventory,spells:own.spells};if(JSON.stringify(update)!==JSON.stringify({level:p.level,className:p.className,abilities:p.abilities,inventory:p.inventory,spells:p.spells})){Object.assign(p,update);saveState(state);}}}
         if(['message','edit','participants'].includes(data.type)&&session.admission!=='pending')recovery.checkpoint();
       });
       ws.on('error',()=>fail(new Error('Не удалось подключиться к комнате. Проверьте адрес и доступность хоста.')));
@@ -98,7 +98,9 @@ export function createMultiplayerClient({getState,saveState,dataDir,canAutoSave=
   }
   function rewritePayload(text,connectionId) {
     if(!session.connected)throw new Error('Подключитесь к комнате.');
-    return {text,connectionId,persona:selfPersona,room:{...session.room,messages:session.messages}};
+    const actor=session.room?.tactical?.actors?.find(candidate=>candidate.id===session.selfId);
+    const persona=actor?.campaignReplacement?{id:actor.personaId,name:actor.name,className:actor.className}:selfPersona;
+    return {text,connectionId,persona,room:{...session.room,messages:session.messages}};
   }
   async function media(id,index,res) {
     if(!session.connected||!(session.messages.some(m=>m.imageId===id)||session.room?.tactical?.map?.imageId===id)||!/^\d+$/.test(index))return res.sendStatus(404);

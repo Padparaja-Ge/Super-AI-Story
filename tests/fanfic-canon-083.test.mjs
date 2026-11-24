@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {fanficFactTypes,fanficFactSchema,normalizeCanonFactDraft} from '../shared/fanfic-canon.mjs';
 import {fanficEvidenceBlocks,validateCanonExtraction,canonFactReference,canonFactText,validateCanonManualFacts,eligibleCanonFacts,canonFactSourceHash,confirmCanonFactDraft} from '../server/fanfic-canon.mjs';
 import {packReference,fanficQueryPlan,resolveFanficContext} from '../server/fanfic-context.mjs';
+const encoderState={settings:{embeddings:{connectionId:'encoder'}},connections:[{id:'encoder',model:'mock-embedding',baseUrl:'http://127.0.0.1:1/v1'}]};
 import {fanficDefaults} from '../shared/fanfic.mjs';
 const base=()=>({id:'own',settings:{...fanficDefaults,vectorMemory:false,memoryTopK:2},characters:[{id:'iris',name:'Ирис'}],personas:[],lorebooks:[],episodes:[]});
 const raw=(value='вернуть печать Эльдору до полнолуния',patch={})=>({type:'promise',subject:'Ирис',predicate:'обещание',value,aliases:['Ласточка'],sourceIndices:[1],...patch});
@@ -69,7 +70,7 @@ test('Semantic facts use bounded multi-query retrieval with no future or unrelat
   const p=base();p.settings.vectorMemory=true;makeEpisode(p,1);
   for(let n=2;n<=30;n++)makeEpisode(p,n,'Город встретил новую весну.',raw('новую весну',{type:'event',subject:'Город',predicate:'сезон',aliases:[]}));
   const future=makeEpisode(p,40,'Ирис узнала БУДУЩИЙ_ПАРОЛЬ.',raw('БУДУЩИЙ_ПАРОЛЬ',{type:'secret',predicate:'пароль',aliases:[]}));
-  let inputs;const result=await resolveFanficContext({state:{multiplayer:{messages:[{content:'ROOM_SECRET'}]}},project:p,episode:current(31),memories:[],instructions:'Ласточка пытается понять свои обязательства.',embeddings:{vectors:async(_state,texts)=>{inputs=texts;return texts.map((text,index)=>index<2||text.includes('вернуть печать')?[1,0]:[0,1]);}},signal:new AbortController().signal});
+  let inputs;const result=await resolveFanficContext({state:{...encoderState,multiplayer:{messages:[{content:'ROOM_SECRET'}]}},project:p,episode:current(31),memories:[],instructions:'Ласточка пытается понять свои обязательства.',embeddings:{vectors:async(_state,texts)=>{inputs=texts;return texts.map((text,index)=>index<2||text.includes('вернуть печать')?[1,0]:[0,1]);}},signal:new AbortController().signal});
   assert.equal(result.report.vectorStatus,'ready');assert.ok(result.facts.some(f=>f.episodeId==='e1'));assert.ok(result.report.selectedFacts.find(f=>f.episodeId==='e1').reasons.includes('semantic'));
   assert.ok(!inputs.join().includes('БУДУЩИЙ_ПАРОЛЬ'));assert.ok(!inputs.join().includes('ROOM_SECRET'));assert.ok(!result.facts.some(f=>f.episodeId===future.id));
 });
@@ -77,7 +78,7 @@ test('Large fact archives bound semantic work while retaining exactly requested 
   const p=base();p.settings.vectorMemory=true;p.characters=[];
   makeEpisode(p,1,'Ирис нашла пароль БОРЕЙ-817.',raw('БОРЕЙ-817',{type:'secret',predicate:'пароль',aliases:[]}));
   for(let n=2;n<=800;n++)makeEpisode(p,n,'Город встретил новую весну.',raw('новую весну',{type:'event',subject:'Город',predicate:'сезон',aliases:[]}));
-  let count=0;const result=await resolveFanficContext({state:{},project:p,episode:current(801),memories:[],instructions:'Вспомни пароль БОРЕЙ-817.',embeddings:{vectors:async(_s,texts)=>{count=texts.length;throw Error('offline');}},signal:new AbortController().signal});
+  let count=0;const result=await resolveFanficContext({state:encoderState,project:p,episode:current(801),memories:[],instructions:'Вспомни пароль БОРЕЙ-817.',embeddings:{vectors:async(_s,texts)=>{count=texts.length;throw Error('offline');}},signal:new AbortController().signal});
   assert.ok(count<=260);assert.equal(result.report.factVectorCandidates,256);assert.equal(result.report.eligibleFacts,800);assert.ok(result.facts.some(f=>f.episodeId==='e1'));assert.equal(result.report.vectorStatus,'fallback');
 });
 test('Query decomposition cannot promote guessed identities or turn pronouns into the active character',()=>{

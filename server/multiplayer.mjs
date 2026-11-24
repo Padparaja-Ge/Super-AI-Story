@@ -5,13 +5,18 @@ import {roomAutosaveSettings} from '../shared/room-autosave.mjs';
 import {returningPlayer,rememberPlayer} from './room-resume.mjs';
 import {normalizeRoomModels,roomModelState} from './room-models.mjs';
 import {beginInitiative,activateInitiative,advanceInitiative} from './initiative.mjs';
-import {createAdventureGame,adventureActor,adventureAction,adventureRules,prepareActor,syncPlayers,resetRound,reachableCells,roundEvents} from './adventure-engine.mjs';
+import {createAdventureGame,adventureActor,adventureAction,prepareActor,syncPlayers,resetRound,reachableCells,roundEvents,updateAdventureRules} from './adventure-engine.mjs';
 import {validateStorybook,quickAdventure,storyContext} from './storybooks.mjs';
 import {storyDirector} from './story-director.mjs';
+import {normalizeGmSettings} from '../shared/gm-profile.mjs';
+import {
+  applyCampaignQuest, assertCampaignPlayable, campaignNarration, campaignState,
+  confirmCampaignDeath, generateQuestDraft, gmProfileInstruction, privateQuestPlans, publicCampaign,
+  questMemoryExcerpts, questTarget, validateGmSettings
+} from './gm-campaign.mjs';
 import {createGame,rulesFor,actorFromPersona,gameAction,logGame} from './tactical.mjs';
 import {validateSRP,modifier} from '../shared/srp.mjs';
 import {pointsOf,checkSkills,initiativeOf} from '../shared/equipment.mjs';
-import {refreshEquipment} from './equipment-engine.mjs';
 import {describeBattlemap,generateMap,populateMap,mapPNG} from './battlemap.mjs';
 import {structuredCompletion} from './services/structuredCompletion.js';
 import http from 'node:http';
@@ -27,6 +32,7 @@ import { emptyScene } from '../shared/defaults.mjs';
 import { RoomTurns } from './room-turns.mjs';
 import {historySummaries,selectRoomHistory,deleteRoomHistory} from './room-history.mjs';
 import { publicPersona } from './room-rewrite.mjs';
+import {archiveEvidenceInstruction} from './archive-evidence.mjs';
 import {createRoomMemory,roomChat,roomMemoryDefaults,roundMessages,extractiveProtocol} from './room-memory.mjs';
 import {fitNarrationPrompt,narrationContextHash,narrationReferencesHash,publicNarration,createNarrationContinuationJoiner} from './room-narration.mjs';
 import {publicRegeneration,cleanNarration,narrationFormatInstruction,narrationStops} from './room-narration.mjs';
@@ -34,9 +40,11 @@ import {gameIdentityProjector} from './room-identities.mjs';
 import {planPlayerCheck,commitPlayerCheck,playerAttempt} from './gm-checks.mjs';
 import {recentGameContext,gameCheckContract,checkNarrationInstruction} from './gm-context.mjs';
 import {reviewGameNarration} from './gm-review.mjs';
-import {budgetGameMessages} from './rag/budget.mjs';
+import {budgetGameMessages,selectRagChunks} from './rag/budget.mjs';
+import {calculateTokenBudget} from './rag/tokens.mjs';
 import {generateStructuredNarration} from './gm-structured-narration.mjs';
 import {createGMJsonEngine} from './gm-json-engine.mjs';
+import {isBigRoom,normalizeCast,pickSpeaker,castBrief,bigRoomInstructions,speakerLorebookIds,BIG_ROOM_MAX_CHAIN} from '../shared/bigroom.mjs';
 
 export function invitationUrls(port,code,interfaces=os.networkInterfaces()) {
   return Object.entries(interfaces).flatMap(([name,items])=>(items||[]).filter(i=>i.family==='IPv4').map(i=>({name,address:i.address,url:`http://${i.address}:${port}/play?code=${encodeURIComponent(code)}`})));
@@ -68,11 +76,11 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
   const requireRoom=()=>{if(!server?.listening)throw new Error('Сначала откройте комнату.');};
   const metadata=()=>readSnapshot(state=>{
     const room=state.multiplayer||{},chat=state.chats.find(c=>c.id===room.chatId),character=state.characters.find(c=>c.id===chat?.characterId);
-    return {room:{lobby:lobbyState(),media:media.publicState(),backupError:backups.error(),autosaveEnabled:canAutoSave()&&roomAutosaveSettings(room.autosaveSettings).enabled,autosaveSettings:roomAutosaveSettings(room.autosaveSettings),corrections:(room.corrections||[]).slice(-50),avatars:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,p.avatar||'✧'])),id:room.id,name:name||room.name,connectionId:room.connectionId,aiSettings:room.aiSettings||{},mode:room.mode||'roleplay',tactical:room.tactical?{...room.tactical,eventArchive:undefined,challengeArchive:undefined,checkSubjectArchive:undefined,checkSubjectArchiveCount:(room.tactical.checkSubjectArchive||[]).length,challengeArchiveCount:(room.tactical.challengeArchive||[]).length,eventCount:(room.tactical.eventArchive||room.tactical.log||[]).length}:undefined,storybook:room.storybook,gmError:room.gmError,narration:publicNarration(room,state),regeneration:publicRegeneration(room,state),memorySettings:{...roomMemoryDefaults,...room.memorySettings},memoryBlocks:roomMemory.validMemory(roomChat(room)).length,memoryProgress:room.memoryProgress,memoryWarning:room.memoryWarning,contextReport:room.contextReport,rulebooks:state.lorebooks.filter(b=>(room.rulebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name})),character:{id:isGame(room)?'':character?.id,name:isGame(room)?'AI Game Master':character?.name||'Ведущий'},scene:room.scene,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name}))},participants:participants(),turn:turns.status(actorIds()),generating:!!generation};
+    return {room:{lobby:lobbyState(),media:media.publicState(),backupError:backups.error(),autosaveEnabled:canAutoSave()&&roomAutosaveSettings(room.autosaveSettings).enabled,autosaveSettings:roomAutosaveSettings(room.autosaveSettings),corrections:(room.corrections||[]).slice(-50),avatars:Object.fromEntries(Object.entries(room.personas||{}).map(([id,p])=>[id,p.avatar||'✧'])),id:room.id,name:name||room.name,connectionId:room.connectionId,aiSettings:room.aiSettings||{},mode:room.mode||'roleplay',...(isGame(room)?{gmSettings:normalizeGmSettings(room.gmSettings),campaign:publicCampaign(room)}:{}),...(isBigRoom(room)?{cast:(room.cast||[]).map(id=>state.characters.find(c=>c.id===id)).filter(Boolean).map(c=>({id:c.id,name:c.name,subtitle:c.subtitle||'',avatar:c.avatar||'✧',color:c.color||''})),speakerId:room.speakerId||''}:{}),tactical:room.tactical?{...room.tactical,eventArchive:undefined,challengeArchive:undefined,checkSubjectArchive:undefined,checkSubjectArchiveCount:(room.tactical.checkSubjectArchive||[]).length,challengeArchiveCount:(room.tactical.challengeArchive||[]).length,eventCount:(room.tactical.eventArchive||room.tactical.log||[]).length}:undefined,storybook:room.storybook,gmError:room.gmError,narration:publicNarration(room,state),regeneration:publicRegeneration(room,state),memorySettings:{...roomMemoryDefaults,...room.memorySettings},memoryBlocks:roomMemory.validMemory(roomChat(room)).length,memoryProgress:room.memoryProgress,memoryWarning:room.memoryWarning,contextReport:room.contextReport,rulebooks:state.lorebooks.filter(b=>(room.rulebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name})),character:{id:isGame(room)?'':character?.id,name:isGame(room)?'AI Game Master':character?.name||'Ведущий'},scene:room.scene,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>({id:b.id,name:b.name}))},participants:participants(),turn:turns.status(actorIds()),generating:!!generation};
   });
   let lastMetadata='';
   const notify=()=>{if(!server?.listening)return;const data=metadata(),serialized=JSON.stringify(data);if(serialized!==lastMetadata){lastMetadata=serialized;broadcast({type:'participants',...data});for(const [socket,peer]of peers)if(peer.authenticated&&peer.admitted===false)send(socket,{type:'lobby-state',selfId:peer.id,admission:'pending',room:{id:roomData().id,name,mode:roomData().mode,lobby:lobbyState()}});}};
-  const status=()=>readSnapshot(state=>({mediaSignals:media.signals('host'),histories:historySummaries(state),running:!!server?.listening,port,url,invitationUrls:server?.listening?invitationUrls(port,code).map(item=>({...item,url:item.url+'&room='+encodeURIComponent(roomData().id)})):[],code,name,...metadata(),hostPersonaId:hostPersona?.id,imageJobs:state.images.filter(i=>i.roomId===roomData().id&&i.status!=='done').map(i=>({id:i.id,status:i.status,error:i.error})),chatId:roomData().chatId,lorebookIds:roomData().lorebookIds||[],messages:messages(),participants:server?.listening?participants():[]}));
+  const status=()=>readSnapshot(state=>({mediaSignals:media.signals('host'),histories:historySummaries(state),running:!!server?.listening,...(isGame(roomData())?{questPlans:privateQuestPlans(roomData()),deadPersonaIds:campaignState(roomData()).deadPersonaIds}:{}),port,url,invitationUrls:server?.listening?invitationUrls(port,code).map(item=>({...item,url:item.url+'&room='+encodeURIComponent(roomData().id)})):[],code,name,...metadata(),hostPersonaId:hostPersona?.id,imageJobs:state.images.filter(i=>i.roomId===roomData().id&&i.status!=='done').map(i=>({id:i.id,status:i.status,error:i.error})),chatId:roomData().chatId,lorebookIds:roomData().lorebookIds||[],messages:messages(),participants:server?.listening?participants():[]}));
   const append=message=>{
     const state=getState();
     state.multiplayer={...state.multiplayer,name,messages:[...(state.multiplayer?.messages||[]),message]};
@@ -81,7 +89,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     persist(state);broadcast({type:'message',message});
   };
   const canWrite=id=>{
-    requireRoom();assertStarted();
+    requireRoom();assertStarted();if(isGame())assertCampaignPlayable(roomData());
     if(tasks?.publicTask?.()?.status==='running')throw Object.assign(new Error('Сначала завершите текущую задачу перед новым ходом.'),{status:409});
     if(generation)throw Object.assign(new Error('Дождитесь окончания хода ведущего.'),{status:409});
     if(publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Сначала допишите или завершите незаконченный ответ ведущего.'),{status:409});
@@ -106,40 +114,63 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
   };
   function configure(options={}) {
     if(generation)throw new Error('Дождитесь окончания хода ведущего.');
-    const state=getState(),room=state.multiplayer||{},chatId=isGame(room)?'':options.chatId??room.chatId??state.chats[0]?.id;
+    const state=getState(),room=state.multiplayer||{},chatId=isGame(room)||isBigRoom(room)?'':options.chatId??room.chatId??state.chats[0]?.id;
     if(options.connectionId!==undefined&&(typeof options.connectionId!=='string'||!state.connections.some(c=>c.id===options.connectionId)))throw new Error('Выберите существующее подключение ведущего.');
     if(publicNarration(room,getState())?.status==='incomplete'&&Object.keys(options).some(k=>!['connectionId','memorySettings'].includes(k)))throw Object.assign(new Error('Завершите незаконченный ответ перед изменением контекста комнаты.'),{status:409});
-    const chat=isGame(room)?{id:'sas-gm',characterId:'sas-gm'}:state.chats.find(c=>c.id===chatId);if(!chat)throw new Error('Выберите персонажа ведущего.');
+    let gmSettings;
+    if(isGame(room)){
+      gmSettings=options.gmSettings===undefined?normalizeGmSettings(room.gmSettings):validateGmSettings(options.gmSettings,room.gmSettings);
+      if(options.gmSettings!==undefined&&campaignState(room).deaths.length&&gmSettings.deathPolicy!==normalizeGmSettings(room.gmSettings).deathPolicy)throw new Error('Правило гибели уже применено в этой кампании.');
+    }
+    const bigRoom=isBigRoom(room),cast=bigRoom?normalizeCast(state.characters,options.castIds??room.cast??[]):undefined;
+    if(bigRoom&&options.castIds!==undefined&&publicNarration(room,state)?.status==='incomplete')throw Object.assign(new Error('Завершите незаконченный ответ перед изменением состава.'),{status:409});
+    const chat=isGame(room)?{id:'sas-gm',characterId:'sas-gm'}:bigRoom?{id:'bigroom',characterId:cast[0]}:state.chats.find(c=>c.id===chatId);if(!chat)throw new Error('Выберите персонажа ведущего.');
     const character=isGame(room)?gameCharacter:state.characters.find(c=>c.id===chat.characterId);if(!character)throw new Error('Карточка ведущего не найдена.');
-    const ids=options.lorebookIds??(chatId===room.chatId?room.lorebookIds:undefined)??character.lorebookIds??[];
+    // Big room: room lorebooks are shared by every character; each character's own books are added per speaker.
+    const ids=options.lorebookIds??(bigRoom||chatId===room.chatId?room.lorebookIds:undefined)??(bigRoom?[]:character.lorebookIds)??[];
     if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!state.lorebooks.some(b=>b.id===id)))throw new Error('Выберите существующие лорбуки комнаты.');
     if(options.weights!==undefined)turns.configure(options.weights,actorIds());
     const rulebookIds=options.rulebookIds??room.rulebookIds??[];if(!Array.isArray(rulebookIds)||rulebookIds.some(id=>!state.lorebooks.some(b=>b.id===id)))throw new Error('Выберите существующие рулбуки.');
-    if(isGame(room)&&options.rules){const g=room.tactical;if(g.inCombat)throw new Error('Завершите бой перед изменением правил.');g.rules=g.version===2?adventureRules(room.mode,options.rules):rulesFor(room.mode,options.rules);for(const a of g.actors){
-      if(g.version===2){prepareActor(a,g.rules);const missingHp=a.maxHp-a.hp,missingSlots=a.maxSlots-a.slots;a.baseArmor=g.rules.armor;a.baseMaxHp=g.rules.hp;a.baseMaxSlots=g.rules.slots;refreshEquipment(a,g.rules);a.hp=Math.max(0,a.maxHp-missingHp);a.slots=Math.max(0,a.maxSlots-missingSlots);a.mana=a.slots;a.actions=g.rules.slowActions??1;a.fastActions=g.rules.fastActions;a.bonusActions=a.fastActions;a.move=g.rules.move;}
-      else{const hp=Math.max(1,g.rules.hp+modifier(a.abilities.constitution));a.hp=Math.max(0,hp-(a.maxHp-a.hp));a.maxHp=hp;a.mana=Math.max(0,g.rules.mana-(a.maxMana-a.mana));a.maxMana=g.rules.mana;a.actions=g.rules.actions;a.bonusActions=g.rules.bonusActions;a.move=g.rules.move;a.armor=g.rules.armor+modifier(a.abilities.dexterity);}
-    }}
+    if(isGame(room)&&options.rules){
+      const game=room.tactical;
+      if(game.inCombat)throw new Error('Завершите бой перед изменением правил.');
+      if(game.version===2)updateAdventureRules(game,options.rules);
+      else{
+        game.rules=rulesFor(room.mode,options.rules);
+        for(const actor of game.actors){
+          const hp=Math.max(1,game.rules.hp+modifier(actor.abilities.constitution));
+          actor.hp=Math.max(0,hp-(actor.maxHp-actor.hp));actor.maxHp=hp;
+          actor.mana=Math.max(0,game.rules.mana-(actor.maxMana-actor.mana));actor.maxMana=game.rules.mana;
+          actor.actions=game.rules.actions;actor.bonusActions=game.rules.bonusActions;actor.move=game.rules.move;
+          actor.armor=game.rules.armor+modifier(actor.abilities.dexterity);
+        }
+      }
+    }
 
     const aiSettings=options.aiSettings!==undefined?normalizeRoomModels(state,options.aiSettings):room.aiSettings||{};
     let memorySettings={...roomMemoryDefaults,...room.memorySettings};
     if(options.memorySettings){
       const m=options.memorySettings;if(typeof m!=='object'||Array.isArray(m))throw new Error('Неверные настройки памяти.');
-      for(const key of ['autoSummary','vectorMemory'])if(m[key]!==undefined){if(typeof m[key]!=='boolean')throw new Error('Неверный переключатель памяти.');memorySettings[key]=m[key];}
+      for(const key of ['autoSummary','vectorMemory','archiveMemory'])if(m[key]!==undefined){if(typeof m[key]!=='boolean')throw new Error('Неверный переключатель памяти.');memorySettings[key]=m[key];}
+      if(m.archiveMemoryVersion!==undefined){if(![1,2].includes(m.archiveMemoryVersion))throw new Error('Неверная версия архивной памяти.');memorySettings.archiveMemoryVersion=m.archiveMemoryVersion;}
       for(const [key,min,max] of [['summaryInterval',2,100],['memoryBudget',200,3000],['historyLimit',0,500],['loreBudget',0,12000]])if(m[key]!==undefined){if(!Number.isInteger(m[key])||m[key]<min||m[key]>max)throw new Error('Неверный лимит памяти.');memorySettings[key]=m[key];}
     }
     if(options.memorySettings?.memoryMode!==undefined){if(!['hybrid','summary','pinned','manual','full','off'].includes(options.memorySettings.memoryMode))throw new Error('Неверный режим памяти.');memorySettings.memoryMode=options.memorySettings.memoryMode;}
-    state.multiplayer={...room,autosaveSettings:roomAutosaveSettings(options.autosaveSettings??room.autosaveSettings),aiSettings,memorySettings,connectionId:options.connectionId??room.connectionId,rulebookIds,chatId,lorebookIds:[...new Set(ids)],weights:{...turns.weights}};
+    state.multiplayer={...room,...(gmSettings?{gmSettings}:{}),autosaveSettings:roomAutosaveSettings(options.autosaveSettings??room.autosaveSettings),aiSettings,memorySettings,connectionId:options.connectionId??room.connectionId,rulebookIds,chatId:bigRoom?'':chatId,lorebookIds:[...new Set(ids)],weights:{...turns.weights},...(bigRoom?{cast}:{})};
     persist(state);notify();return status();
   }
   function context() {
-    const state=getState(),room=state.multiplayer||{},chat=isGame(room)?{id:'sas-gm',characterId:'sas-gm',connectionId:room.connectionId,memorySettings:{historyLimit:40,loreBudget:2200,memoryMode:'hybrid'}}:state.chats.find(c=>c.id===room.chatId);
-    if(!chat)throw new Error('Выберите персонажа ведущего.');
-    const roomContext=roomChat(room,{...chat,personaId:'',lorebookIds:[...new Set(room.lorebookIds||[])],scene:room.scene||emptyScene()});
+    const state=getState(),room=state.multiplayer||{},bigRoom=isBigRoom(room),speaker=bigRoom?state.characters.find(c=>c.id===(room.cast||[]).find(id=>id===room.speakerId))||state.characters.find(c=>c.id===room.cast?.[0]):null;
+    const chat=isGame(room)?{id:'sas-gm',characterId:'sas-gm',connectionId:room.connectionId,memorySettings:{historyLimit:40,loreBudget:2200,memoryMode:'hybrid'}}:bigRoom?(speaker?{id:'bigroom',characterId:speaker.id,connectionId:room.connectionId,title:room.name}:null):state.chats.find(c=>c.id===room.chatId);
+    if(!chat)throw new Error(bigRoom?'В большой комнате нет доступных персонажей.':'Выберите персонажа ведущего.');
+    const loreIds=bigRoom?speakerLorebookIds(room,speaker):[...new Set(room.lorebookIds||[])];
+    const roomContext=roomChat(room,{...chat,personaId:'',lorebookIds:loreIds,scene:room.scene||emptyScene()});
     const modelState=roomModelState(state,room);
-    const promptState={...modelState,...(isGame(room)?{activePresetId:''}:{}),personas:[],characters:[...state.characters.map(c=>({...c,personaId:''})),...(isGame(room)?[gameCharacter]:[])],plugins:isGame(room)?[]:state.plugins,lorebooks:state.lorebooks.filter(b=>(room.lorebookIds||[]).includes(b.id)).map(b=>isGame(room)?b:({...b,entries:b.entries.map(e=>({...e,name:`Лорбук «${b.name}» · ${e.name}`}))})),settings:{...modelState.settings,userName:'Участники комнаты',narrative:isGame(room)?{mode:'gamemaster',tense:'present',perspective:'third',length:'medium',instructions:''}:{...state.settings.narrative,mode:'gamemaster'}},chats:[roomContext]};
+    const promptState={...modelState,...(isGame(room)?{activePresetId:''}:{}),personas:[],characters:[...state.characters.map(c=>({...c,personaId:''})),...(isGame(room)?[gameCharacter]:[])],plugins:isGame(room)?[]:state.plugins,lorebooks:state.lorebooks.filter(b=>loreIds.includes(b.id)).map(b=>isGame(room)?b:({...b,entries:b.entries.map(e=>({...e,name:`Лорбук «${b.name}» · ${e.name}`}))})),settings:{...modelState.settings,userName:'Участники комнаты',narrative:isGame(room)?{mode:'gamemaster',tense:'present',perspective:'third',length:'medium',instructions:''}:{...state.settings.narrative,mode:'gamemaster'}},chats:[roomContext]};
     const descriptions=Object.entries(room.personas||{}).map(([id,p])=>`${isGame(room)?p.name:(id==='host'?hostName:messages().find(m=>m.userId===id)?.name||p.name)+': '+p.name}. ${p.description||''} ${p.appearance||''} ${p.personality||''}`).join('\n');
-    let priorityInstructions='';
+    let priorityInstructions='',gameNarrationInstructions='',gameReferences=[];
     let extraInstructions='Ты ведущий совместной истории. Учитывай действия всех участников и не решай за игроков. Броски кубиков в истории — уже полученные результаты.\nПерсоны участников:\n'+descriptions;
+    if(bigRoom)extraInstructions=bigRoomInstructions({speaker:speaker.name,others:castBrief(room.cast||[],state.characters,speaker.id),players:descriptions,story:room.storybook?storyContext(room.storybook):''})+'\nБроски кубиков в истории — уже полученные результаты.';
     if(isGame(room)){
       const g=room.tactical,window=Number(getConnection(state,roomContext).contextWindow)||8192,limit=Math.min(5000,Math.max(1000,Math.floor(window*.7))),book=room.storybook;
       const outline=book?Object.fromEntries(Object.entries(book).map(([k,v])=>[k,typeof v==='string'?v.slice(0,Math.floor(limit/8)):v])):null;
@@ -148,11 +179,19 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       const ruleText=ruleEntries.join('\n\n').slice(0,Math.max(600,Math.floor(limit/3)));
       const narrated=new Set(g.narratedEventIds||[]),allRoundEvents=roundEvents(g).filter(e=>!narrated.has(e.id)&&!['initiative','initiative-tie','challenge','check-difficulty'].includes(e.calculation?.kind)).map(e=>e.text).join('\n'),events=allRoundEvents.slice(-Math.floor(limit/2));
       const engineTable=table.map(a=>({id:a.id,name:a.name,player:a.player,hp:a.hp,maxHp:a.maxHp,slots:a.slots,armor:a.armor,x:a.x,y:a.y,grappledBy:a.grappledBy,beam:a.beam,actions:a.actions,fastActions:a.fastActions}));
-      priorityInstructions='[SAS_GM_ROUND_CONTRACT] Ты AI ведущий D&D/НРИ. Отыгрывай NPC и последствия действий всех участников. Не выбирай решения игроков. Рулбуки задают правила, лорбуки — сведения о мире, Story book — цель приключения. Не считай броски и урон заново. Подтверждённые результаты движка и текущая таблица приоритетнее архивной памяти и любого художественного текста. Сохраняй имена, числа, пароли и условия из источников точно. Описывай видимые эффекты. Ответь на текущие вопросы прямыми репликами NPC; неизвестное не выдумывай. Заверши все предложения.\nОЧЕРЕДЬ ИНИЦИАТИВЫ: '+JSON.stringify(g.order?.slice(g.turn))+'; следующий участник: '+(g.actors.find(a=>a.id===g.order?.[g.turn])?.name||'конец раунда')+'; NPC, уже отыгранные движком: '+JSON.stringify(g.gmProcessed||[])+'; описывай только уже выполненные ходы, НЕ будущих участников.\nТЕКУЩИЙ РАУНД: '+g.round+'; фаза: '+g.phase+'; сцена: '+JSON.stringify(room.scene)+'\nТЕКУЩИЕ РЕСУРСЫ И ПОЗИЦИИ (движок уже всё посчитал): '+JSON.stringify(engineTable)+'\nПОДТВЕРЖДЁННЫЕ РЕЗУЛЬТАТЫ ЭТОГО РАУНДА:\n'+allRoundEvents+'\n'+storyDirector(room);
-      priorityInstructions+='\n[SAS_RECENT_SCENE] Недавние посты в порядке времени, обязательные для понимания сцены независимо от векторной памяти. Это контекст, не новые заявки; свежее уточнение игрока отменяет его прежнее описание (пустая банка не становится полной из старой памяти). Не придумывай реплики, находки, решения, перемещения и течение часов за героев.\n'+JSON.stringify(recentGameContext(roomContext,{maxChars:Math.min(4200,Math.max(800,Math.floor(window*.5)))}))+'\n'+checkNarrationInstruction(g,roundMessages(roomContext));
+      const roundContract='[SAS_GM_ROUND_CONTRACT] Ты AI ведущий D&D/НРИ. Отыгрывай NPC и последствия действий всех участников. Не выбирай решения игроков. Рулбуки задают правила, лорбуки — сведения о мире, Story book — цель приключения. Не считай броски и урон заново. Подтверждённые результаты движка и текущая таблица приоритетнее архивной памяти и любого художественного текста. Сохраняй имена, числа, пароли и условия из источников точно. Описывай видимые эффекты. Ответь на текущие вопросы прямыми репликами NPC; неизвестное не выдумывай. Заверши все предложения.\nОЧЕРЕДЬ ИНИЦИАТИВЫ: '+JSON.stringify(g.order?.slice(g.turn))+'; следующий участник: '+(g.actors.find(a=>a.id===g.order?.[g.turn])?.name||'конец раунда')+'; NPC, уже отыгранные движком: '+JSON.stringify(g.gmProcessed||[])+'; описывай только уже выполненные ходы, НЕ будущих участников.\nТЕКУЩИЙ РАУНД: '+g.round+'; фаза: '+g.phase+'; сцена: '+JSON.stringify(room.scene)+'\nТЕКУЩИЕ РЕСУРСЫ И ПОЗИЦИИ (движок уже всё посчитал): '+JSON.stringify(engineTable)+'\nРасчёты ТОЛЬКО ЭТОГО раунда (результаты подтверждены движком):\n'+allRoundEvents;
+      const recentScene='[SAS_RECENT_SCENE] Недавние посты в порядке времени, обязательные для понимания сцены независимо от векторной памяти. Это контекст, не новые заявки; свежее уточнение игрока отменяет его прежнее описание (пустая банка не становится полной из старой памяти). Не придумывай реплики, находки, решения, перемещения и течение часов за героев.\n'+JSON.stringify(recentGameContext(roomContext,{maxChars:Math.min(4200,Math.max(800,Math.floor(window*.5)))}));
+      const direction=storyDirector(room),checks=checkNarrationInstruction(g,roundMessages(roomContext));
+      const goal=book?.goal?'STORY BOOK — постоянная основа приключения\nЦель героев: '+String(book.goal).slice(0,450):'';
+      gameNarrationInstructions=[roundContract,gmProfileInstruction(room),goal,campaignNarration(room,Math.floor(window*.065)),checks].filter(Boolean).join('\n');
+      priorityInstructions=[gameNarrationInstructions,direction,recentScene].filter(Boolean).join('\n');
+      const rules=[ruleText,g.rules.instructions.slice(0,1500)].filter(Boolean).join('\n');
+      gameReferences=[descriptions?'Персоны участников:\n'+descriptions.slice(0,Math.floor(limit/4)):'',direction,recentScene]
+        .filter(Boolean).map(content=>({role:'system',content}));
+      if(rules)gameReferences.push({role:'system',content:'РУЛБУКИ — ПРАВИЛА ИГРЫ, НЕ СОБЫТИЯ СЮЖЕТА. Они не заменяют результаты движка.\n'+rules,important:true});
       extraInstructions='Ты AI ведущий. Описывай последствия уже рассчитанных действий и всех NPC; не выбирай действия за игроков и не придумывай броски, урон или изменения ресурсов. Текущая таблица движка — канон, она приоритетнее устаревших чисел в архиве. Расчёты уже показаны игрокам: в повествовании описывай попадания, промахи, ранения и эффекты без повторного подсчёта и перечисления HP, урона, ячеек и кубиков. Отвечай только на вопросы текущего раунда: старые вопросы из архива повторно не разыгрывай. Если игрок слушает или ждёт, не придумывай за него новые вопросы, жесты и решения. Числа, сроки, пароли и условия из источников неизменны; нельзя самовольно добавлять скидки, награды или новые условия. Исключение — уже подтверждённое движком успешное намерение игрока: например, согласие NPC на запрошенную цену, без автоматической покупки или передачи денег.\n'+'\nРУЛБУКИ — ПРАВИЛА ИГРЫ, НЕ СОБЫТИЯ СЮЖЕТА. Движок рассчитывает числа; не подменяй его результаты правилами из художественного текста. ЛОРБУКИ описывают мир, персонажей и факты, но не переопределяют механику.\n'+ruleText+'\n'+storyContext(outline)+'\nТекущая сцена: '+JSON.stringify(room.scene)+'\nРаунд '+g.round+' · '+g.phase+'\nТЕКУЩИЕ ресурсы и позиции ПОСЛЕ действий: '+JSON.stringify(table)+'\nРасчёты ТОЛЬКО ЭТОГО раунда (уже выполнены):\n'+events+'\nПравила хоста: '+g.rules.instructions.slice(0,1500)+'\nПерсоны: '+descriptions.slice(0,Math.floor(limit/4));
     }
-    return {state:promptState,chat:roomContext,extraInstructions,priorityInstructions,roomId:room.id};
+    return {state:promptState,chat:roomContext,extraInstructions,priorityInstructions,gameNarrationInstructions,gameReferences,roomId:room.id};
   }
   function editMessage(id,content) {
     requireRoom();if(generation)throw new Error('Нельзя менять контекст во время хода ведущего.');
@@ -193,16 +232,28 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     selectRoomHistory(initial,options);
     const pendingReopen=publicNarration(initial.multiplayer,initial)?.status==='incomplete',originalHostId=initial.multiplayer.personas?.host?.id||initial.multiplayer.tactical?.actors?.find(a=>a.id==='host')?.personaId;
     if(pendingReopen&&originalHostId&&originalHostId!==hostPersona.id)throw Object.assign(new Error('Сначала допишите ответ ведущего с прежней персоной хоста. Сменить персону можно после завершения раунда.'),{status:409});
-    if(!['roleplay','dnd','custom'].includes(initial.multiplayer.mode||'roleplay'))throw new Error('Неизвестный режим игры.');
+    if(!['roleplay','dnd','custom','bigroom'].includes(initial.multiplayer.mode||'roleplay'))throw new Error('Неизвестный режим игры.');
+    if(isBigRoom(initial.multiplayer)){
+      const room=initial.multiplayer;room.cast=normalizeCast(initial.characters,room.cast||[]);
+      if(options.storybookId&&!room.storybook){const book=initial.storybooks.find(b=>b.id===options.storybookId);if(!book)throw new Error('Story book не найден.');if(book.kind!=='bigroom')throw new Error('Выберите Story book, помеченный для большой комнаты.');room.storybook=validateStorybook(book);room.scene={...emptyScene(),...room.scene,location:room.storybook.start};}
+    }
     if(isGame(initial.multiplayer)){
       validateSRP(hostPersona);const room=initial.multiplayer;
-      if(options.adventure&&!room.storybook){const a=options.adventure;if(a.kind==='book'){const book=initial.storybooks.find(b=>b.id===a.bookId);room.storybook=validateStorybook(book);}else if(a.kind==='quick')room.storybook=await quickAdventure(initial,{...a,connectionId:options.connectionId},getSecret,signal);else throw new Error('Выберите начало приключения.');room.scene={...emptyScene(),location:room.storybook.start};}
+      if(options.gmSettings!==undefined){
+        const settings=validateGmSettings(options.gmSettings,room.gmSettings);
+        if(campaignState(room).deaths.length&&settings.deathPolicy!==normalizeGmSettings(room.gmSettings).deathPolicy)throw new Error('Правило гибели уже применено в этой кампании.');
+        room.gmSettings=settings;
+      }
+      const storedHost=room.tactical?.actors?.find(actor=>actor.id==='host');
+      if(storedHost?.personaId!==hostPersona.id&&campaignState(room).deadPersonaIds.includes(hostPersona.id))throw new Error('Гибель этого героя уже подтверждена в кампании.');
+      if(storedHost&&storedHost.personaId!==hostPersona.id&&(storedHost.campaignDead||campaignState(room).phase==='ended'))throw new Error('Откройте кампанию с её действующей персоной хоста. Героя можно заменить в журнале кампании.');
+      if(options.adventure&&!room.storybook){const a=options.adventure;if(a.kind==='book'){const book=initial.storybooks.find(b=>b.id===a.bookId);if(book?.kind==='bigroom')throw new Error('Этот Story book предназначен для большой комнаты, а не для D&D.');room.storybook=validateStorybook(book);}else if(a.kind==='quick')room.storybook=await quickAdventure(initial,{...a,connectionId:options.connectionId},getSecret,signal);else throw new Error('Выберите начало приключения.');room.scene={...emptyScene(),location:room.storybook.start};}
       if(room.tactical?.version!==2){const old=room.tactical;room.tactical=createAdventureGame(room.mode,options.rules);if(old){room.legacyTactical=old;room.tactical.map=old.map;room.tactical.log=old.log||[];room.tactical.round=Math.max(1,old.round||1);room.tactical.actors=(old.actors||[]).filter(a=>!a.player);}} 
       const g=room.tactical;for(const a of g.actors)if(a.player&&a.id!=='host')a.online=false;let host=g.actors.find(a=>a.id==='host');
       if(!host||host.personaId!==hostPersona.id){g.actors=g.actors.filter(a=>a.id!=='host');const player=adventureActor('host',hostPersona,g.rules),oldHost=room.legacyTactical?.actors?.find(a=>a.id==='host');if(g.map)Object.assign(player,oldHost?{x:oldHost.x,y:oldHost.y}:g.map.start[0]);g.actors.unshift(player);}
       if(!pendingReopen)for(const a of g.actors)prepareActor(a,g.rules);if(!pendingReopen){if(!g.initiativeVersion){if(g.phase!=='gm')beginInitiative(g);}else syncPlayers(g);}if(room.storybook&&!room.messages.length)g.phase='gm';if(room.narration&&['writing','incomplete'].includes(room.narration.status)){room.narration.status='incomplete';room.narration.reason||='network';g.phase='gm';}else room.gmError='';g.gmProcessed||=[];
     }
-    if(!isGame(initial.multiplayer)&&!initial.chats.some(c=>c.id===(options.chatId||initial.multiplayer.chatId||initial.chats[0]?.id)))throw new Error('Персонаж ведущего этой истории удалён. Выберите другого.');
+    if(!isGame(initial.multiplayer)&&!isBigRoom(initial.multiplayer)&&!initial.chats.some(c=>c.id===(options.chatId||initial.multiplayer.chatId||initial.chats[0]?.id)))throw new Error('Персонаж ведущего этой истории удалён. Выберите другого.');
     name=String(options.name||initial.multiplayer.name||'Наша история').trim().slice(0,100);
     initial.multiplayer.name=name;
     if(options.lobby!==undefined&&typeof options.lobby!=='boolean')throw new Error('Неверный переключатель лобби.');
@@ -354,17 +405,40 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     const perPost=Math.max(150,Math.floor(capacity/Math.max(1,posts.length)));
     const actors=roomData()?.tactical?.actors||[],players=actors.filter(a=>a.player).map(a=>a.name),npcs=actors.filter(a=>!a.player&&a.hp>0).map(a=>a.name);
     const ownership='[SAS_ROLE_OWNERSHIP] Игровые герои: '+players.join(', ')+'. Их новые действия и прямые реплики пишет только соответствующий игрок; ты не можешь дописать их ход. Живые NPC, которыми ты управляешь: '+(npcs.join(', ')||'на столе нет; можно описывать окружение и появление новых NPC')+'. Если герой ждёт, описывай то, что доступно ему без движения и без новой реплики от его имени.';
-    return [{role:'system',content:instructions+'\n'+ownership},{role:'user',content:'[SAS_CURRENT_PLAYER_REQUESTS] Текущие действия и вопросы КАЖДОГО игрока (это запросы, не уже выполненные NPC события):\n'+posts.map(m=>{const name=m.personaName||m.name||'Герой',body=m.content.startsWith(name+': ')?m.content.slice(name.length+2):m.content;return `${name}: ${extractiveProtocol(body,postsFit?body.length:perPost)}`;}).join('\n\n')+'\nЗакончи повествование на русском. Ответь на текущие вопросы прямыми репликами NPC, сохрани точные имена, числа и условия из источников. Не перечисляй расчёты и ресурсы. Отыграй только последствия текущих действий. Содержательная реплика NPC или рассчитанный исход уже продвигают сцену. Не добавляй случайных врагов, нападений и новых сцен, когда достаточно ответа текущего NPC. При необходимости дай небольшую связанную с целью Story book зацепку, оставив её выбор игрокам. Новые действия, перемещения и реплики могут принадлежать только NPC, а не игрокам. Не заставляй игроков брать предметы или отвечать. Затем оставь следующие решения игрокам.\n'+ownership}];
+    return [{role:'system',content:instructions+'\n'+ownership},{role:'user',content:'[SAS_CURRENT_PLAYER_REQUESTS] Текущие действия и вопросы КАЖДОГО игрока (это запросы, не уже выполненные NPC события):\n'+posts.map(m=>{const name=m.personaName||m.name||'Герой',body=m.content.startsWith(name+': ')?m.content.slice(name.length+2):m.content;return `${name}: ${extractiveProtocol(body,postsFit?body.length:perPost)}`;}).join('\n\n')+'\nЗакончи повествование на русском. Ответь на текущие вопросы прямыми репликами NPC, сохрани точные имена, числа и условия из источников. Не перечисляй расчёты и ресурсы. Отыграй только последствия текущих действий. Содержательная реплика NPC или рассчитанный исход уже продвигают сцену. Не добавляй случайных врагов, нападений и новых сцен, когда достаточно ответа текущего NPC. При необходимости дай небольшую связанную с целью Story book зацепку, оставив её выбор игрокам. Новые действия, перемещения и реплики могут принадлежать только NPC, а не игрокам. Не заставляй игроков брать предметы или отвечать. Затем оставь следующие решения игрокам.'}];
   }
   function applyGameBudget(source,priority,results,connection,maxTokens,memorySettings={}){
     const systems=priority.filter(m=>m.role==='system'),requests=priority.filter(m=>m.role!=='system');
-    const window=Number(connection.contextWindow)||8192,output=Math.max(32,Math.min(Number(maxTokens)||Number(connection.maxTokens)||1024,Math.floor(window/2)));
-    let assembled;try{assembled=budgetGameMessages({systemMessages:[...systems,...source.filter(m=>m.role==='system')],requiredMessages:requests,ragResults:results||[],maxInputTokens:window-output-128,maxLoreTokens:memorySettings.loreBudget,maxMemoryTokens:memorySettings.memoryBudget});}catch(error){if(error.code==='RAG_CONTEXT_REQUIRED')error.code='NARRATION_CONTEXT';throw error;}
-    return {...assembled,source:assembled.messages.slice(systems.length,assembled.messages.length-requests.length)};
+    const window=Number(connection.contextWindow)||8192,requested=Math.max(32,Math.min(Number(maxTokens)||Number(connection.maxTokens)||1024,Math.floor(window/2)));
+    const references=source.map(message=>({...message,optional:true}));
+    const rules=references.filter(message=>message.important),optional=references.filter(message=>!message.important);
+    // The built-in GGUF tokenizer can be smaller than the rough estimator. Keep the bounded shortlist for its exact fit.
+    const ragLimits={maxLoreTokens:memorySettings.loreBudget,maxMemoryTokens:memorySettings.memoryBudget};
+    const nativeRag=connection.id==='sas-local'?selectRagChunks(results||[],ragLimits):null;
+    let lastError;
+    // Prefer the explicit house rules to a longer reply, but the engine state and current player requests remain authoritative.
+    for(const preferred of (rules.length?[rules,[]]:[[]])){
+      for(const output of new Set([requested,Math.min(requested,512),Math.min(requested,160)])){
+        const maxInputTokens=window-output-128;
+        if(maxInputTokens<=0)continue;
+        try{
+          const assembled=budgetGameMessages({systemMessages:[...systems,...preferred],requiredMessages:requests,recentMessages:optional,ragResults:nativeRag?[]:results||[],maxInputTokens,...ragLimits});
+          const source=assembled.messages.slice(systems.length,assembled.messages.length-requests.length);
+          if(!nativeRag?.text)return {...assembled,maxTokens:output,source};
+          source.push({role:'user',content:nativeRag.text});
+          return {...assembled,selectedChunks:nativeRag.chunks,ragTokens:nativeRag.tokens,tokens:assembled.tokens+nativeRag.tokens+8,maxTokens:output,source};
+        }catch(error){
+          if(error.code!=='RAG_CONTEXT_REQUIRED')throw error;
+          lastError=error;
+        }
+      }
+    }
+    if(lastError){lastError.code='NARRATION_CONTEXT';throw lastError;}
+    throw Object.assign(new Error('Для инструкций ведущего не хватает контекста выбранной модели.'),{code:'NARRATION_CONTEXT'});
   }
   async function regenerateNarration(messageId,signal){
     const initial=getState(),room=initial.multiplayer,allowed=publicRegeneration(room,initial),record=room.lastNarration;
-    if(allowed?.messageId!==messageId||!allowed.canRegenerate||!record?.promptMessages?.length)throw Object.assign(new Error('Перегенерация доступна до новых сообщений и действий игроков. Уже выполненные ходы не переигрываются.'),{status:409});
+    if(allowed?.messageId!==messageId||!allowed.canRegenerate||!(record?.promptMessages?.length||record?.priorityMessages?.length))throw Object.assign(new Error('Перегенерация доступна до новых сообщений и действий игроков. Уже выполненные ходы не переигрываются.'),{status:409});
     const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();generation=controller;notify();
     try{
       const {state,chat}=context(),connection=getConnection(state,chat),started=performance.now();let text='',reason='',firstTokenAt,lastTimings;
@@ -390,12 +464,12 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       try{const refreshed=context(),scene=await inferScene(refreshed.state,{...refreshed.chat,scene:record.sceneBefore||refreshed.chat.scene},getSecret,controller.signal,{game:isGame(room)});if(scene){const latest=getState();if(latest.multiplayer?.id===room.id){latest.multiplayer.scene={...latest.multiplayer.scene,...scene};latest.multiplayer.lastNarration.contextHash=narrationContextHash(latest.multiplayer,messageId);persist(latest);}}}catch{}return {message,regenerated:true,incomplete:false};
     }finally{signal?.removeEventListener('abort',abort);if(generation===controller)generation=undefined;notify();}
   }
-  async function generate({chatId,content,continueMessageId,acceptMessageId,regenerateMessageId,signal}={}) {
+  async function generate({chatId,content,continueMessageId,acceptMessageId,regenerateMessageId,speakerId,chained=false,signal}={}) {
     assertStarted();
-    requireRoom();if(generation)throw Object.assign(new Error('Ведущий уже пишет ответ.'),{status:409});
+    requireRoom();if(isGame())assertCampaignPlayable(roomData());if(generation)throw Object.assign(new Error('Ведущий уже пишет ответ.'),{status:409});
     if(regenerateMessageId){if(continueMessageId||acceptMessageId||content?.trim()||chatId)throw Object.assign(new Error('Выберите только перегенерацию ответа.'),{status:400});return regenerateNarration(regenerateMessageId,signal);}
     if(continueMessageId&&acceptMessageId)throw Object.assign(new Error('Выберите дописывание или завершение ответа.'),{status:400});
-    const room=roomData(),pending=publicNarration(room,getState()),resumeId=continueMessageId||acceptMessageId,resume=!!resumeId;
+    const room=roomData();if(isGame(room))assertCampaignPlayable(room);const pending=publicNarration(room,getState()),resumeId=continueMessageId||acceptMessageId,resume=!!resumeId;
     if(resume){
       if(typeof resumeId!=='string'||pending?.messageId!==resumeId||pending.status!=='incomplete')throw Object.assign(new Error('Незаконченный ответ этой комнаты не найден.'),{status:409});
       if(continueMessageId&&!pending.canContinue)throw Object.assign(new Error('Контекст раунда изменён. Сохраните отредактированный ответ как готовый; повторное выполнение ходов не требуется.'),{status:409});
@@ -405,10 +479,16 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       if(chatId&&!isGame()&&chatId!==room.chatId)configure({chatId});
       if(content?.trim())playerMessage('host',content);
     }
-    if(isGame()&&roomData().tactical.version===2){if(roomData().tactical.phase!=='gm')throw new Error('Сейчас очередь игрока. Завершите его ход.');}else if(!resume)turns.assert('narrator',actorIds());
+    if(isGame()&&roomData().tactical.version===2){if(roomData().tactical.phase!=='gm')throw new Error('Сейчас очередь игрока. Завершите его ход.');}else if(!resume&&!chained)turns.assert('narrator',actorIds());
+    if(isBigRoom(roomData())){
+      // The engine picks the speaker; the host may name one explicitly. A resumed
+      // answer keeps the character that started it.
+      const live=getState(),bigRoom=live.multiplayer,resumed=resume?bigRoom.messages.find(m=>m.id===resumeId)?.characterId:'';
+      bigRoom.speakerId=resumed||pickSpeaker(bigRoom.cast||[],(bigRoom.messages||[]).filter(m=>m.kind!=='image'),live.characters,{requested:speakerId||undefined});persist(live);
+    }else if(speakerId)throw Object.assign(new Error('Выбор говорящего доступен только в большой комнате.'),{status:400});
     const controller=new AbortController();generation=controller;
     const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();notify();
-    const id=resume?resumeId:crypto.randomUUID(),roomId=roomData().id,gameMode=isGame(roomData()),narratorName=gameMode?'AI Game Master':getState().characters.find(c=>c.id===getState().chats.find(ch=>ch.id===roomData().chatId)?.characterId)?.name||'Ведущий';
+    const id=resume?resumeId:crypto.randomUUID(),roomId=roomData().id,gameMode=isGame(roomData()),bigSpeaker=isBigRoom(roomData())?roomData().speakerId:'',narratorName=gameMode?'AI Game Master':bigSpeaker?getState().characters.find(c=>c.id===bigSpeaker)?.name||'Персонаж':getState().characters.find(c=>c.id===getState().chats.find(ch=>ch.id===roomData().chatId)?.characterId)?.name||'Ведущий';
     const validationResume=resume&&room.narration?.reason==='validation',reviewRound=room.narration?.reviewRound??room.tactical?.round,reviewEventIds=room.narration?.reviewEventIds||(gameMode?gameCheckContract(room.tactical,roundMessages(roomChat(room))).outcomes.map(e=>e.eventId):[]);
     let reviewing=validationResume,reviewActors=room.narration?.reviewActors;
     const captureReviewActors=actors=>actors.map(a=>({id:a.id,name:a.name,player:a.player,hp:a.hp,slots:a.slots,inventory:(a.inventory||[]).map(i=>({id:i.id,name:i.name,quantity:i.quantity}))}));
@@ -416,13 +496,16 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     let text=resume?(room.messages.find(m=>m.id===id)?.content||''):'',finishReason='',automatic=0,lastSave=0,sourcePrompt,promptMaxTokens,priorityMessages=[];
     const updateMessage=(incomplete,error='')=>{
       const fresh=getState();if(fresh.multiplayer?.id!==roomId)throw new Error('История комнаты изменилась.');
-      fresh.multiplayer.messages||=[];const target=fresh.multiplayer.messages.find(m=>m.id===id),message={...(target||{id,role:'assistant',name:narratorName,createdAt:new Date().toISOString()}),content:text,interrupted:incomplete,continuationStatus:incomplete?'incomplete':'complete'};
+      fresh.multiplayer.messages||=[];const target=fresh.multiplayer.messages.find(m=>m.id===id),message={...(target||{id,role:'assistant',name:narratorName,...(bigSpeaker?{characterId:bigSpeaker}:{}),createdAt:new Date().toISOString()}),content:text,interrupted:incomplete,continuationStatus:incomplete?'incomplete':'complete'};
       if(target)Object.assign(target,message);else fresh.multiplayer.messages.push(message);
       fresh.multiplayer.narration={...fresh.multiplayer.narration,messageId:id,status:incomplete?'incomplete':'complete',reason:finishReason==='length'?'length':controller.signal.aborted?'stopped':'network',error,automaticContinuations:automatic};
       persist(fresh);broadcast({type:target?'edit':'message',message});lastSave=Date.now();return message;
     };
     const finalize=()=>{
-      const clean=cleanNarration(text);if(!clean)throw new Error('Модель вернула только служебный заголовок. Допишите ответ или повторите генерацию.');text=clean;
+      let clean=cleanNarration(text);
+      const speakerLabel=narratorName+':';
+      if(bigSpeaker&&clean.startsWith(speakerLabel))clean=clean.slice(speakerLabel.length).trimStart();
+      if(!clean)throw new Error('Модель вернула только служебный заголовок. Допишите ответ или повторите генерацию.');text=clean;
       const message=updateMessage(false),fresh=getState();
       if(gameMode&&fresh.multiplayer.tactical.version===2){
         const game=fresh.multiplayer.tactical,spoken=gameCheckContract(game,roundMessages(roomChat(fresh.multiplayer))).outcomes.map(c=>c.eventId);
@@ -434,7 +517,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         if(game.initiativeVersion&&game.gmPendingNext&&game.turn<game.order.length){game.gmPendingNext=false;activateInitiative(game);}else resetRound(game);game.gmProcessed=[];fresh.multiplayer.gmError='';
       }
       else turns.complete('narrator',actorIds());
-      if(fresh.multiplayer.narration?.promptMessages?.length)fresh.multiplayer.lastNarration={messageId:id,promptMessages:fresh.multiplayer.narration.promptMessages,priorityMessages:fresh.multiplayer.narration.priorityMessages||[],maxTokens:fresh.multiplayer.narration.maxTokens,strictContextBudget:fresh.multiplayer.narration.strictContextBudget,structuredNarration:fresh.multiplayer.narration.structuredNarration,sceneBefore:fresh.multiplayer.narration.sceneBefore,reviewRound,reviewEventIds,reviewActors,contextHash:narrationContextHash(fresh.multiplayer,id),referencesHash:narrationReferencesHash(fresh,fresh.multiplayer)};
+      if(fresh.multiplayer.narration?.promptMessages?.length||fresh.multiplayer.narration?.priorityMessages?.length)fresh.multiplayer.lastNarration={messageId:id,promptMessages:fresh.multiplayer.narration.promptMessages,priorityMessages:fresh.multiplayer.narration.priorityMessages||[],maxTokens:fresh.multiplayer.narration.maxTokens,strictContextBudget:fresh.multiplayer.narration.strictContextBudget,structuredNarration:fresh.multiplayer.narration.structuredNarration,sceneBefore:fresh.multiplayer.narration.sceneBefore,reviewRound,reviewEventIds,reviewActors,contextHash:narrationContextHash(fresh.multiplayer,id),referencesHash:narrationReferencesHash(fresh,fresh.multiplayer)};
       // Retain only the most recent snapshot, privately, for text-only retries.
       delete fresh.multiplayer.narration;persist(fresh);return message;
     };
@@ -445,7 +528,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
       if(resume){
         ({state,chat}=context());connection=getConnection(state,chat);sourcePrompt=room.narration?.promptMessages;priorityMessages=room.narration?.priorityMessages||[];promptMaxTokens=Number(connection.maxTokens)||room.narration?.maxTokens;
         if(pending.legacy){const current=context();priorityMessages=gameMode?requiredNarrationMessages(current.priorityInstructions,roundMessages(chat),connection):[];const prompt=preparePrompt?await preparePrompt(state,chat.id,'',{extensionMode:state.multiplayer?.mode==='roleplay'?'multiplayer-roleplay':state.multiplayer?.mode,extraInstructions:current.extraInstructions,compact:true,extraFirst:true,signal:controller.signal}):buildPrompt(state,chat.id,'',{extraInstructions:current.extraInstructions,compact:true,extraFirst:true});sourcePrompt=prompt.messages;promptMaxTokens=prompt.budget.maxTokens;const fresh=getState();fresh.multiplayer.narration={messageId:id,status:'incomplete',promptMessages:sourcePrompt,priorityMessages,maxTokens:promptMaxTokens,contextHash:narrationContextHash(fresh.multiplayer,id),referencesHash:narrationReferencesHash(fresh,fresh.multiplayer)};persist(fresh);}
-        if(!Array.isArray(sourcePrompt)||!sourcePrompt.length)throw new Error('Сохранённый контекст дописывания отсутствует. Отредактируйте ответ и сохраните как готовый.');
+        if(!Array.isArray(sourcePrompt)||!(sourcePrompt.length||priorityMessages.length))throw new Error('Сохранённый контекст дописывания отсутствует. Отредактируйте ответ и сохраните как готовый.');
       }else{
         try{await roomMemory.maintain(roomId,{signal:controller.signal,onProgress:progress});const s=getState();if(s.multiplayer?.id===roomId){s.multiplayer.memoryWarning='';persist(s);}}catch(error){controller.signal.throwIfAborted();const s=getState();if(s.multiplayer?.id===roomId){s.multiplayer.memoryWarning='Сводка памяти: '+error.message;persist(s);}}
         if(gameMode)await npcTurns(controller.signal);
@@ -455,11 +538,14 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         const round=gameMode?await roomMemory.compactRound(state,chat,{signal:controller.signal,onProgress:progress}):{messages:[],compressed:[]};
         // Current posts live once, in protected priorityMessages. References contain archive only.
         const historyMessages=gameMode?(recalled.text?[{role:'user',content:recalled.text}]:[]):undefined;
-        const options={extensionMode:state.multiplayer?.mode==='roleplay'?'multiplayer-roleplay':state.multiplayer?.mode,extraInstructions:gameMode?current.extraInstructions:[recalled.text,current.extraInstructions].filter(Boolean).join('\n\n'),compact:true,extraFirst:true,preserveHistory:gameMode,signal:controller.signal,retrieval:recalled.retrieval,...(historyMessages?{historyMessages}:{})};
+        const options={extensionMode:state.multiplayer?.mode==='roleplay'?'multiplayer-roleplay':state.multiplayer?.mode,extraInstructions:gameMode?'':[recalled.text,current.extraInstructions].filter(Boolean).join('\n\n'),compact:true,extraFirst:true,preserveHistory:gameMode,signal:controller.signal,retrieval:recalled.retrieval,...(historyMessages?{historyMessages}:{})};
         const prompt=preparePrompt?await preparePrompt(state,chat.id,'',options):buildPrompt(state,chat.id,'',options);
-        sourcePrompt=prompt.messages;sourcePrompt[0]={...sourcePrompt[0],content:sourcePrompt[0].content+'\n'+narrationFormatInstruction};promptMaxTokens=prompt.budget.maxTokens;priorityMessages=gameMode?requiredNarrationMessages(current.priorityInstructions+'\n'+narrationFormatInstruction,round.messages,connection):[];
+        sourcePrompt=gameMode?[...prompt.messages,...current.gameReferences]:prompt.messages;
+        if(!gameMode)sourcePrompt[0]={...sourcePrompt[0],content:sourcePrompt[0].content+'\n'+narrationFormatInstruction};
+        promptMaxTokens=gameMode?(Number(connection.maxTokens)||prompt.budget.maxTokens):prompt.budget.maxTokens;
+        priorityMessages=gameMode?requiredNarrationMessages([current.gameNarrationInstructions,narrationFormatInstruction,archiveEvidenceInstruction(recalled.retrieval.archiveEvidence)].filter(Boolean).join('\n'),round.messages,connection):[];
         const gameBudget=gameMode?applyGameBudget(sourcePrompt,priorityMessages,recalled.retrieval.gameRagResults,connection,promptMaxTokens,chat.memorySettings):null;
-        if(gameBudget)sourcePrompt=gameBudget.source;
+        if(gameBudget){sourcePrompt=gameBudget.source;promptMaxTokens=gameBudget.maxTokens;}
         const report={...recalled.report,compressedPosts:round.compressed,playerPosts:(gameMode?round.messages:roundMessages(chat)).map(m=>({id:m.id,name:m.name||m.personaName})),...(gameMode?{recentScenePosts:recentGameContext(chat).map(m=>({id:m.id,role:m.role})),checks:gameCheckContract(roomData().tactical,round.messages),rag:{...recalled.report.rag,selectedIds:gameBudget.selectedChunks.map(c=>c.id),tokens:gameBudget.ragTokens,maxTokens:1500,maxChunks:3}}:{}),warnings:[...recalled.warnings,...(prompt.warnings||[])],estimatedTokens:gameBudget?.tokens??prompt.estimatedTokens,budget:prompt.budget,createdAt:new Date().toISOString()};
         const prepared=getState();if(gameMode)reviewActors=captureReviewActors(prepared.multiplayer.tactical.actors);prepared.multiplayer.contextReport=report;prepared.multiplayer.memoryProgress='Ведущий описывает последствия ходов';prepared.multiplayer.narration={messageId:id,status:'writing',promptMessages:sourcePrompt,priorityMessages,maxTokens:promptMaxTokens,strictContextBudget:gameMode,structuredNarration:gameMode&&prepared.multiplayer.aiSettings?.structuredNarration===true,sceneBefore:structuredClone(prepared.multiplayer.scene),reviewRound,reviewEventIds,reviewActors,contextHash:narrationContextHash(prepared.multiplayer,id),referencesHash:narrationReferencesHash(prepared,prepared.multiplayer),createdAt:new Date().toISOString()};persist(prepared);notify();
       }
@@ -467,8 +553,10 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
         controller.signal.throwIfAborted();const continuing=resume||attempt>0;
         progress(continuing?'Ведущий дописывает незаконченный ответ':'Ведущий описывает последствия ходов');
         const project=gameIdentityProjector(roomData()),fitted=await fitNarrationPrompt(connection,getSecret(connection.id),sourcePrompt.map(m=>({...m,content:project(m.content)})),{text:continuing?project(text):'',maxTokens:promptMaxTokens,signal:controller.signal,adaptInstruction:true,priorityMessages:priorityMessages.map(m=>({...m,content:project(m.content)})),gameBudget:!!roomData().narration?.strictContextBudget});
-        const measured=getState(),includedRag=fitted.messages.filter(m=>m.content.startsWith('[SAS_RAG_SOURCES]\n')).flatMap(m=>m.content.split('\n').slice(1).flatMap(line=>{try{return [JSON.parse(line).id];}catch{return [];}}));
-        measured.multiplayer.contextReport={...measured.multiplayer.contextReport,estimatedTokens:fitted.estimatedTokens,actualTokens:fitted.actualTokens,tokenizer:fitted.actualTokens===null?(gameMode&&roomData().narration?.strictContextBudget?'cl100k_base':'estimate'):'model',continuation:continuing,...(gameMode?{rag:{...measured.multiplayer.contextReport?.rag,selectedIds:includedRag,count:includedRag.length},sources:(measured.multiplayer.contextReport?.sources||[]).filter(s=>includedRag.includes(s.id))}:{})};persist(measured);
+        const measured=getState(),ragMessages=fitted.messages.filter(m=>m.content.startsWith('[SAS_RAG_SOURCES]\n'));
+        const includedRag=ragMessages.flatMap(m=>m.content.split('\n').slice(1).flatMap(line=>{try{return [JSON.parse(line).id];}catch{return [];}}));
+        const ragTokens=ragMessages.reduce((total,message)=>total+calculateTokenBudget(message.content),0);
+        measured.multiplayer.contextReport={...measured.multiplayer.contextReport,estimatedTokens:fitted.estimatedTokens,actualTokens:fitted.actualTokens,tokenizer:fitted.actualTokens===null?(gameMode&&roomData().narration?.strictContextBudget?'cl100k_base':'estimate'):'model',continuation:continuing,...(gameMode?{rag:{...measured.multiplayer.contextReport?.rag,selectedIds:includedRag,count:includedRag.length,tokens:ragTokens},sources:(measured.multiplayer.contextReport?.sources||[]).filter(s=>includedRag.includes(s.id))}:{})};persist(measured);
         const before=text.length,joiner=continuing?createNarrationContinuationJoiner(text):undefined;finishReason='';
         const appendDelta=chunk=>{if(!chunk)return;firstTokenAt??=performance.now();text+=chunk;if(text.length>2000000)throw new Error('Ответ ведущего слишком длинный.');broadcast({type:'delta',id,text:chunk});if(Date.now()-lastSave>=500)updateMessage(true);};
         try{
@@ -533,7 +621,7 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
   }
 
   function autoGM(){
-    if(!server?.listening||generation||tasks?.busy())return;const state=getState(),room=state.multiplayer||{};if(room.lobby?.enabled&&room.lobby.phase!=='playing'||!isGame(room))return;if(room.tactical?.inCombat&&!room.tactical.actors.some(a=>a.player&&a.hp>0&&a.online!==false))return;if(room.tactical?.version!==2||room.tactical.phase!=='gm'||room.gmError||publicNarration(room,state)?.status==='incomplete')return;
+    if(!server?.listening||generation||tasks?.busy())return;const state=getState(),room=state.multiplayer||{};if(room.lobby?.enabled&&room.lobby.phase!=='playing'||!isGame(room)||campaignState(room).phase==='ended')return;if(room.tactical?.inCombat&&!room.tactical.actors.some(a=>a.player&&a.hp>0&&a.online!==false))return;if(room.tactical?.version!==2||room.tactical.phase!=='gm'||room.gmError||publicNarration(room,state)?.status==='incomplete')return;
     const promise=tasks?tasks.run({kind:'multiplayer',stage:'Ход AI-ведущего'},signal=>generate({signal})).promise:generate();
     void promise.catch(error=>{const state=getState();if(state.multiplayer?.id===room.id){state.multiplayer.gmError=error.message;persist(state);notify();}});
   }
@@ -582,13 +670,13 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     }finally{if(generation===controller)generation=undefined;notify();}
   }
   function act(request,userId='host'){
-    requireRoom();assertStarted();if(tasks?.publicTask?.()?.status==='running')throw Object.assign(new Error('Сначала завершите текущую задачу перед новым ходом.'),{status:409});if(!isGame())throw new Error('Тактические действия доступны в D&D/НРИ.');if(generation)throw new Error('Дождитесь ведущего.');if(publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Сначала завершите ответ ведущего.'),{status:409});const p=participants().find(p=>p.id===userId);if(!p||p.muted)throw new Error('Нет права на действия.');
+    requireRoom();assertStarted();if(tasks?.publicTask?.()?.status==='running')throw Object.assign(new Error('Сначала завершите текущую задачу перед новым ходом.'),{status:409});if(!isGame())throw new Error('Тактические действия доступны в D&D/НРИ.');assertCampaignPlayable(roomData());if(generation)throw new Error('Дождитесь ведущего.');if(publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Сначала завершите ответ ведущего.'),{status:409});const p=participants().find(p=>p.id===userId);if(!p||p.muted)throw new Error('Нет права на действия.');
     const state=getState(),g=state.multiplayer.tactical,actor=g.actors.find(a=>a.id===(request.actorId||userId));
     if(g.version===2&&(request.action==='prepareCheck'||request.action==='check'&&!request.challengeId&&!request.freeCheck&&actor&&playerAttempt(state.multiplayer,actor,request).intent))return contextualCheck(request,userId);
     (g.version===2?adventureAction:gameAction)(g,request,userId,{host:userId==='host'});if(g.version===2){syncPlayers(g);for(const actor of g.actors.filter(a=>a.player)){const update={level:actor.level,className:actor.className,abilities:actor.abilities,inventory:actor.inventory,spells:actor.spells};const p=actor.id==='host'?state.personas.find(p=>p.id===actor.personaId):state.multiplayer.personas?.[actor.id];if(p)Object.assign(p,update);if(actor.id==='host'&&hostPersona)Object.assign(hostPersona,update);}}persist(state);notify();return status();
   }
   async function makeMap({width,height,signal,onProgress=()=>{}}){
-    requireRoom();if(!isGame())throw new Error('Карта доступна в D&D/НРИ.');if(roomData().tactical?.inCombat)throw new Error('Завершите текущий бой перед созданием новой карты.');if(publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Завершите ответ ведущего перед заменой карты.'),{status:409});const {state,chat,extraInstructions,roomId}=context();onProgress('Ведущий составляет план карты');const descriptor=await describeBattlemap(state,chat,getSecret,signal,extraInstructions);signal?.throwIfAborted();const map=generateMap({width,height,descriptor}),fresh=getState();if(fresh.multiplayer?.id!==roomId||!server?.listening)throw new Error('Комната закрыта.');fresh.multiplayer.tactical.map=map;populateMap(fresh.multiplayer.tactical,descriptor);const game=fresh.multiplayer.tactical;
+    requireRoom();if(!isGame())throw new Error('Карта доступна в D&D/НРИ.');assertCampaignPlayable(roomData());if(roomData().tactical?.inCombat)throw new Error('Завершите текущий бой перед созданием новой карты.');if(publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Завершите ответ ведущего перед заменой карты.'),{status:409});const {state,chat,extraInstructions,roomId}=context();onProgress('Ведущий составляет план карты');const descriptor=await describeBattlemap(state,chat,getSecret,signal,extraInstructions);signal?.throwIfAborted();const map=generateMap({width,height,descriptor}),fresh=getState();if(fresh.multiplayer?.id!==roomId||!server?.listening)throw new Error('Комната закрыта.');fresh.multiplayer.tactical.map=map;populateMap(fresh.multiplayer.tactical,descriptor);const game=fresh.multiplayer.tactical;
     const actorIds=new Set(game.actors.map(a=>a.id));for(const challenge of game.challenges||[])if(challenge.targetId&&!actorIds.has(challenge.targetId)||challenge.subjectId&&game.checkSubjects?.find(s=>s.id===challenge.subjectId)?.kind==='environment'){challenge.active=false;challenge.closedReason='Сцена и тактическая карта заменены.';}
     if(game.version===2){for(const actor of game.actors)prepareActor(actor,game.rules);beginInitiative(game);}persist(fresh);notify();return map;
   }
@@ -618,8 +706,100 @@ export function createMultiplayer({ getState, saveState, getSecret, dataDir, pre
     }else throw new Error('Неизвестное действие лобби.');
     persist(state);diagnostics?.record('room_lobby',{kind:options.action});notify();return status();
   }
+  async function campaignAction(request={},signal){
+    requireRoom();
+    const state=getState(),room=state.multiplayer;
+    if(!isGame(room))throw new Error('Журнал кампании доступен в D&D/НРИ.');
+    assertCampaignPlayable(room);
+    if(generation||tasks?.busy()||publicNarration(room,state)?.status==='incomplete'){
+      throw Object.assign(new Error('Сначала завершите ход или задачу ведущего.'),{status:409});
+    }
+    const game=room.tactical,campaign=campaignState(room);
+    if(!['offer','accept','decline','progress','complete','downtime','resume','death','replace'].includes(request?.action))throw new Error('Неизвестное действие кампании.');
+    if(['offer','downtime','replace'].includes(request.action)&&game.inCombat)throw new Error('Это действие доступно вне боя.');
+    if(request.action==='death'){
+      const actor=game.actors.find(actor=>actor.id===request.actorId);
+      confirmCampaignDeath(room,actor);
+      logGame(game,'Подтверждена гибель героя: '+actor.name+'.',{kind:'campaign-death',actorId:actor.id});
+      syncPlayers(game);
+      persist(state);notify();return status();
+    }
+    if(request.action==='replace'){
+      const actor=game.actors.find(actor=>actor.id===request.actorId&&actor.player&&actor.campaignDead);
+      if(!actor||normalizeGmSettings(room.gmSettings).deathPolicy!=='replace')throw new Error('Для этого героя замена недоступна.');
+      const persona=state.personas.find(persona=>persona.id===request.personaId);
+      if(persona&&campaign.deadPersonaIds.includes(persona.id))throw new Error('Гибель этого героя уже подтверждена в кампании.');
+      if(!persona||persona.id===actor.personaId||game.actors.some(other=>other.id!==actor.id&&other.personaId===persona.id))throw new Error('Выберите нового героя, который ещё не участвует в кампании.');
+      const savedPersona=publicPersona(persona),replacement=adventureActor(actor.id,savedPersona,game.rules);
+      if(game.map){
+        const cell=(game.map.start||[]).find(cell=>!game.actors.some(other=>other.id!==actor.id&&other.hp>0&&other.x===cell.x&&other.y===cell.y));
+        if(!cell)throw new Error('В стартовой зоне нет места для нового героя.');
+        Object.assign(replacement,cell);
+      }
+      replacement.online=actor.online;
+      if(actor.id!=='host')replacement.campaignReplacement=true;
+      if(actor.online===false)replacement.turnUnavailable=true;
+      game.actors[game.actors.indexOf(actor)]=replacement;
+      room.personas={...room.personas,[actor.id]:savedPersona};
+      logGame(game,persona.name+' присоединяется к кампании после гибели героя '+actor.name+'.',{kind:'campaign-replacement',actorId:actor.id});
+      syncPlayers(game);persist(state);
+      if(actor.id==='host')hostPersona=persona;
+      else for(const peer of peers.values())if(peer.id===actor.id)peer.persona=savedPersona;
+      notify();return status();
+    }
+    if(!['offer','accept'].includes(request.action)){
+      applyCampaignQuest(campaign,request);
+      room.campaign=campaign;persist(state);notify();return status();
+    }
+    const quest=request.action==='accept'?questTarget(campaign,request):undefined;
+    // Check the transition before spending any model or embedding work.
+    applyCampaignQuest(structuredClone(campaign),request);
+    const controller=new AbortController();
+    const abort=()=>controller.abort();
+    signal?.addEventListener('abort',abort,{once:true});
+    if(signal?.aborted)controller.abort();
+    generation=controller;notify();
+    const prepare=async taskSignal=>{
+      const signal=taskSignal?AbortSignal.any([taskSignal,controller.signal]):controller.signal;
+      signal.throwIfAborted();
+      const contextBefore=narrationContextHash(room);
+      const contextState=context();
+      const focusQuery=(quest?[quest.title,quest.goal,quest.hook]:[room.storybook?.goal,room.scene?.location])
+        .filter(value=>typeof value==='string'&&value.trim()).join(' · ');
+      const recalled=contextState.chat.memorySettings.vectorMemory
+        ?await roomMemory.recall(contextState.state,contextState.chat,signal,{focusQuery}):null;
+      const draft=await generateQuestDraft({state:contextState.state,chat:contextState.chat,room,quest,excerpts:questMemoryExcerpts(recalled),getSecret,signal});
+      signal.throwIfAborted();
+      const fresh=getState(),current=fresh.multiplayer;
+      if(!server?.listening||current?.id!==room.id||narrationContextHash(current)!==contextBefore)throw new Error('Кампания изменилась во время подготовки задания.');
+      const currentCampaign=campaignState(current);
+      applyCampaignQuest(currentCampaign,request,draft);
+      current.campaign=currentCampaign;persist(fresh);
+    };
+    try{
+      if(tasks)await tasks.run({kind:'quest-planning',stage:'Мастер готовит задание…'},prepare).promise;
+      else await prepare();
+    }finally{
+      signal?.removeEventListener('abort',abort);
+      if(generation===controller)generation=undefined;
+      notify();
+    }
+    return status();
+  }
   function correct(request){requireRoom();if(generation||tasks?.publicTask?.()?.status==='running'||publicNarration(roomData(),getState())?.status==='incomplete')throw Object.assign(new Error('Завершите текущий ответ или задачу перед исправлением.'),{status:409});const state=getState(),result=correctRoom(state.multiplayer,request);persist(state);if(result.message)broadcast({type:'edit',message:result.message});notify();return {...status(),correction:result.audit};}
   async function restoreBackup(input){if(server?.listening||generation)throw new Error('Закройте комнату перед восстановлением.');const bundle=input?.backupId?await backups.read(input.backupId):input;const state=getState();restoreCampaign(state,bundle);name=state.multiplayer.name;persist(state);await backups.flush();diagnostics?.record('room_restore',{kind:state.multiplayer.mode,count:state.multiplayer.messages.length});return status();}
   const summarizeMemory=async options=>{requireRoom();if(generation)throw new Error('Дождитесь ведущего.');return roomMemory.summarize(roomData().id,options);};
-  return {start,stop,status,lobby,correct,backups:()=>backups.list(),backup:id=>id?backups.read(id):backups.manual(),restoreBackup,mediaCommand:body=>{requireRoom();return media.hostCommand(body);},voiceCommand:body=>{requireRoom();return media.command({id:'host',name:hostName},body);},audio:async(req,res,target)=>{if(!await media.handleHttp(req,res,target,{authorized:true})){res.writeHead(404);res.end();}},removeHistory,generate,configure,context,editMessage,moderate,publishImage,notify,act,makeMap,summarizeMemory,dice:(sides)=>dice('host',sides),hostMessage:content=>playerMessage('host',content)};
+  /** Big room: several characters answer one after another (they talk to each other). */
+  async function converse({count=2,speakerId,signal}={}){
+    requireRoom();if(!isBigRoom(roomData()))throw Object.assign(new Error('Беседа персонажей доступна только в большой комнате.'),{status:400});
+    if(!Number.isInteger(count)||count<1||count>BIG_ROOM_MAX_CHAIN)throw Object.assign(new Error(`Число реплик: от 1 до ${BIG_ROOM_MAX_CHAIN}.`),{status:400});
+    const messages=[];
+    for(let i=0;i<count;i++){
+      if(signal?.aborted)break;
+      const result=await generate({speakerId:i===0?speakerId:undefined,chained:i>0,signal});
+      messages.push(result.message);if(result.incomplete)return {messages,incomplete:true,reason:result.reason};
+    }
+    return {messages,incomplete:false};
+  }
+  return {start,stop,converse,status,lobby,correct,campaignAction,backups:()=>backups.list(),backup:id=>id?backups.read(id):backups.manual(),restoreBackup,mediaCommand:body=>{requireRoom();return media.hostCommand(body);},voiceCommand:body=>{requireRoom();return media.command({id:'host',name:hostName},body);},audio:async(req,res,target)=>{if(!await media.handleHttp(req,res,target,{authorized:true})){res.writeHead(404);res.end();}},removeHistory,generate,configure,context,editMessage,moderate,publishImage,notify,act,makeMap,summarizeMemory,dice:(sides)=>dice('host',sides),hostMessage:content=>playerMessage('host',content)};
 }

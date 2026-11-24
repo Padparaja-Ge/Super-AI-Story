@@ -4,6 +4,7 @@ import {structuredCompletion,parseObject} from './services/structuredCompletion.
 import {positivePrompt,visualTags} from './services/imagePromptService.js';
 import {getConnection,countCompletionTokens} from './llm.mjs';
 import {messageTokens} from './prompt.mjs';
+import {localizeFanficLorebooks} from '../shared/fanfic-lore-localization.mjs';
 import {fanficCast,selectFanficLore,clip} from './fanfic-context.mjs';
 
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
@@ -178,7 +179,9 @@ export function createFanficImages({getState,saveState,getSecret,tasks,comfyRout
     if(sceneExcerpt!==undefined&&(typeof sceneExcerpt!=='string'||!sceneExcerpt.trim()||sceneExcerpt.length>16000))fail('Выберите непустой фрагмент серии до 16000 символов.');
     if(sceneExcerpt!==undefined&&!episode.content.includes(sceneExcerpt))fail('Выделенный фрагмент изменился. Сохраните текст серии и выберите его заново.',409);
     const connection=getConnection(state,{connectionId:project.settings.connectionId});
-    const options={project,episode,connection,request:req.body?.instructions||'',sceneExcerpt,framePassport};
+    const lorebooks=await localizeFanficLorebooks(project.lorebooks);
+    const localizedProject=lorebooks===project.lorebooks?project:{...project,lorebooks};
+    const options={project:localizedProject,episode,connection,request:req.body?.instructions||'',sceneExcerpt,framePassport};
     let prepared=buildFanficImageContext(options);
     const sourceHash=fanficImageSourceHash(episode.content),sourceRevision=episode.revision;
     const task=tasks.run({kind:'fanfic-image',fanficProjectId:project.id,episodeId:episode.id,stage:'Иллюстрация: составляем визуальный промпт'},async signal=>{

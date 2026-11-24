@@ -22,6 +22,10 @@ let component=await fs.readFile(new URL('../src/Fanfic.tsx',import.meta.url),'ut
 component+='\nexport {FactEditor, ContextInspector, ProjectSettings, FramePassportEditor, ProposalWarnings};';
 let compiled=bare(transpile(component)).replace(/import ["']\.\/fanfic\.css["'];?/,'');
 for(const [name,address] of Object.entries({'../shared/speech.mjs':new URL('../shared/speech.mjs',import.meta.url).href,'./SpeechButton':speechURL,'./api':apiURL,'./UI':uiURL,'./fanficDrafts':draftURL,'./fanficWorkbench':helperURL}))compiled=compiled.replaceAll(JSON.stringify(name),JSON.stringify(address)).replaceAll("'"+name+"'",JSON.stringify(address));
+const starterURL=url(bare(transpile(await fs.readFile(new URL('../src/FanficStarter.tsx',import.meta.url),'utf8'))).replaceAll('./UI',uiURL).replaceAll('../shared/fanfic-starter-catalog.mjs',new URL('../shared/fanfic-starter-catalog.mjs',import.meta.url).href).replaceAll('../shared/fanfic-lore-localization.mjs',new URL('../shared/fanfic-lore-localization.mjs',import.meta.url).href));
+const archiveToggleURL=url('export const ArchiveMemoryToggle=()=>null;');
+const guideURL=url('export function openModeGuide(){}');
+for(const [name,address] of Object.entries({'../shared/fanfic-starter-catalog.mjs':new URL('../shared/fanfic-starter-catalog.mjs',import.meta.url).href,'../shared/fanfic-lore-localization.mjs':new URL('../shared/fanfic-lore-localization.mjs',import.meta.url).href,'../shared/fanfic-starters.mjs':new URL('../shared/fanfic-starters.mjs',import.meta.url).href,'./FanficStarter':starterURL,'./ArchiveMemoryToggle':archiveToggleURL,'./BeginnerGuide':guideURL}))compiled=compiled.replaceAll(JSON.stringify(name),JSON.stringify(address)).replaceAll("'"+name+"'",JSON.stringify(address));
 const {FanficView,FactEditor,ContextInspector,ProjectSettings,FramePassportEditor,ProposalWarnings}=await import(url(compiled));
 const proposal={id:'edit',sourceRevision:7,selectionStart:7,selectionEnd:12,original:'вошёл',replacement:'тихо вошёл'};
 const episode={id:'episode',projectId:'work',revision:7,season:1,number:2,title:'Встреча',content:'Он уже вошёл в дом.',status:'approved',brief:'',editProposal:proposal};

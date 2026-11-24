@@ -1,6 +1,8 @@
 import {samplingBody} from '../shared/local-options.mjs';
 import {createAssistantOutputFilter} from './assistant-output.mjs';
 import {repeatedReply} from './roleplay.mjs';
+export const sharedConnectionPrefix = 'sas-share-';
+
 export function getConnection(state, chat) {
   const connection = state.connections.find(item => item.id === (chat?.connectionId || state.activeConnectionId));
   if (!connection) throw new Error('Подключение не найдено. Добавьте его в настройках моделей.');
@@ -81,7 +83,7 @@ function networkError(error) {
 
 export async function listModels(connection, secret, options = {}) {
   try {
-    const response = await fetch(endpoint(connection, 'models'), { headers: headers(secret), signal: options.signal || AbortSignal.timeout(15000) });
+    const response = await fetch(endpoint(connection, 'models'), { headers: headers(secret), signal: options.signal || AbortSignal.timeout(15000), redirect: options.redirect ?? (connection.id?.startsWith(sharedConnectionPrefix) ? 'error' : undefined) });
     if (!response.ok) throw await responseError(response);
     const data = await response.json();
     const models = (data.data || data.models || []).map(model => typeof model === 'string' ? model : model.id || model.name || model.model).filter(Boolean);
@@ -114,7 +116,7 @@ export async function* streamCompletion(connection, secret, messages, options = 
     return value;
   };
   try {
-    response = await fetch(endpoint(connection, 'chat/completions'), { method: 'POST', headers: headers(secret), body: JSON.stringify(body), signal });
+    response = await fetch(endpoint(connection, 'chat/completions'), { method: 'POST', headers: headers(secret), body: JSON.stringify(body), signal, redirect: options.redirect ?? (connection.id?.startsWith(sharedConnectionPrefix) ? 'error' : undefined) });
     if (!response.ok) throw await responseError(response);
     if (!response.body) throw new Error('API вернул пустой поток.');
     if (response.headers.get('content-type')?.includes('application/json')) {

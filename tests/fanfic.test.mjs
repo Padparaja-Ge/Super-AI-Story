@@ -23,6 +23,8 @@ async function fixture(t){
     streamHandler=async function*(){yield 'Первая сцена.';};
   state.connections[0].model='mock-fanfic';
   state.connections[0].contextWindow=8192;
+  state.settings.embeddings.connectionId='fixture-embedding';
+  state.connections.push({id:'fixture-embedding',kind:'openai',model:'mock-embedding',baseUrl:'http://127.0.0.1:1/v1'});
   const tasks=createTasks(),structuredCalls=[],streamCalls=[],vectorCalls=[];
   let vectorHandler=texts=>texts.map(()=>[1,0,0]),tokenHandler=async()=>null;
   const getState=()=>structuredClone(state),saveState=next=>{state=sanitizeState(next);state.revision++;return getState();};
@@ -169,6 +171,87 @@ test('A token-limited response continues the same scene before advancing the out
   assert.equal(count,2);assert.equal(episodeIn(f,p.id,e.id).content,'Незаконченная сцена завершилась находкой.');
   assert.match(f.streamCalls[1].messages[1].content,/Незаконченная сцена/);
   assert.equal(episodeIn(f,p.id,e.id).sceneIndex,1);assert.equal(episodeIn(f,p.id,e.id).generation,null);
+});
+
+test('Literary continuation repairs a clear restarted sentence and an unspaced standalone word',async t=>{
+ const f=await fixture(t);
+ const cases=[
+  ['Торс поднял мокрый мешок. Торфинн следил за отцом, который, казалось,',['То','рс глубоко задумался.'],'Торс поднял мокрый мешок. Торс глубоко задумался.'],
+  ['Асуна была решительно настроенная',['на',' защиту друга.'],'Асуна была решительно настроенная на защиту друга.'],
+  ['Когда стемнело, ',['Лейф вернулся на пристань.'],'Когда стемнело, Лейф вернулся на пристань.'],
+  ['Лира нашла закрытую две',['рь.'],'Лира нашла закрытую дверь.'],
+  ["Lucy lowered her voice. David's shoulders slumped",["Da","vid's shoulders slumped"," as he listened."],"Lucy lowered her voice. David's shoulders slumped as he listened."]
+ ];
+ for(const [prefix,following,expected] of cases){
+  const fixture=await createWork(f,{settings:{sceneCount:1,continuityCheck:false}});
+  let count=0;
+  f.setStream(async function*(call){
+   if(++count===1){yield prefix;call.options.onFinish('length');}
+   else{for(const chunk of following)yield chunk;call.options.onFinish('stop');}
+  });
+  await generate(f,fixture.path,{action:'write'});
+  const saved=episodeIn(f,fixture.project.id,fixture.episode.id);
+  assert.equal(saved.content,expected);
+  assert.equal(saved.generation,null);
+ }
+});
+
+test('Ambiguous continuation at a dangling comma preserves the interrupted draft for manual resume',async t=>{
+ const f=await fixture(t),{project:p,episode:e,path}=await createWork(f,{settings:{sceneCount:1}});
+ const prefix='На пристани, потом,';
+ let count=0;
+ f.setStream(async function*(call){
+  yield ++count===1?prefix:'Торс поднял мешок.';
+  call.options.onFinish(count===1?'length':'stop');
+ });
+ await f.request(path+'/generate',{action:'write'});
+ const failed=await f.done();assert.equal(failed.status,'error');assert.match(failed.error,/Черновик сохранён/);
+ const draft=episodeIn(f,p.id,e.id);assert.equal(draft.content,prefix);assert.equal(draft.generation.partial,prefix);
+ f.setStream(async function*(){yield ' стало тихо.';});
+ await generate(f,path,{action:'resume',expectedRevision:draft.revision});
+ assert.equal(episodeIn(f,p.id,e.id).content,'На пристани, потом, стало тихо.');
+});
+
+test('A single-scene author cap keeps a completed short request from starting another scene or saving a broken tail',async t=>{
+ const f=await fixture(t);
+ const cases=[
+  {instruction:'Закончить через три-четыре предложения.',raw:'Торс поднял мешок. Он осмотрел верёвку. Вокруг было тихо. Торфинн понял, что',reason:'length',expected:'Торс поднял мешок. Он осмотрел верёвку. Вокруг было тихо.'},
+  {instruction:'Оставь решение о печати открытым. Один абзац.',raw:'Юдзи открыл журнал. На полях виднелась дата.\n\nМэгуми вернулся домой и',reason:'length',expected:'Юдзи открыл журнал. На полях виднелась дата.'},
+  {instruction:'Две-три короткие фразы.',raw:'Я смотрю на экран. Я считаю деньги. Я жду автобус. Я смотрю на часы.',reason:'stop',expected:'Я смотрю на экран. Я считаю деньги. Я жду автобус.',correction:'Неоконченный ответ'}
+ ];
+ for(const {instruction,raw,reason,expected,correction} of cases){
+  const {project:p,episode:e,path}=await createWork(f,{settings:{sceneCount:1,continuityCheck:false}});
+  let count=0;
+  f.setStream(async function*(call){count++;yield count===1?raw:correction;call.options.onFinish?.(reason);});
+  await generate(f,path,{action:'write',instructions:instruction});
+  assert.equal(count,correction?2:1);
+  assert.equal(f.structuredCalls.filter(call=>call.name==='fanfic_outline').length,0);
+  const {messages}=f.streamCalls.at(-count);
+  assert.match(messages[0].content,/Start immediately with the first requested action/);
+  assert.ok(messages[1].content.includes(instruction));
+  assert.doesNotMatch(messages[1].content,/SCENE PLAN/);
+  const saved=episodeIn(f,p.id,e.id);
+  assert.equal(saved.content,expected);
+  assert.equal(saved.outline.length,1);
+ }
+});
+
+test('A short scene is compressed without discarding the requested reply at the end',async t=>{
+  const f=await fixture(t),work=await createWork(f,
+    {settings:{sceneCount:1,writingLanguage:'en'}},
+    {brief:'Write two short sentences. Kiwi tells Falco that the sender is unknown, then he agrees to wait by the stairs.'});
+  const expanded='The alley was dark. Kiwi was tired. Kiwi told Falco that the sender was unknown. He agreed to wait by the stairs.';
+  const compressed='Kiwi told Falco that the sender was unknown. He agreed to wait by the stairs.';
+  let calls=0;
+  f.setStream(async function*(call){
+    if(++calls===1){yield expanded;call.options.onFinish('stop');return;}
+    assert.match(call.messages[0].content,/into 2 sentences/);
+    assert.match(JSON.parse(call.messages[1].content).draft,/He agreed to wait by the stairs/);
+    yield compressed;
+  });
+  await generate(f,work.path,{action:'write'});
+  assert.equal(calls,2);
+  assert.equal(episodeIn(f,work.project.id,work.episode.id).content,compressed);
 });
 
 test('An empty response after a token limit reports the unfinished scene and retains its complete resumable draft',async t=>{
@@ -445,4 +528,294 @@ test('All local fanfic generation paths adapt Alpaca instructions and native rew
  const rewrites=f.structuredCalls.filter(c=>c.name==='fanfic_rewrite');assert.ok(rewrites.length>1);assert.equal(rewrites.map(c=>c.context.source).join(''),e.content.slice(start,end));assert.ok(rewrites.every(c=>c.adaptInstruction===true));
  await generate(f,path,{action:'approve'});assert.ok(f.structuredCalls.filter(c=>c.name==='fanfic_memory').every(c=>c.adaptInstruction===true));
  f.setStructured(args=>({scenes:[{title:'Сцена',summary:'Ирис покинула ворота.'}]}));await generate(f,path,{action:'alternative'});assert.ok(f.structuredCalls.filter(c=>c.name==='fanfic_outline').every(c=>c.adaptInstruction===true));assert.ok(f.streamCalls.every(c=>c.options.adaptInstruction===true));
+});
+
+test('Every starter has a specific opening and usable lead at a small context size',async t=>{
+  const {buildFanficStarter,fanficStarters}=await import('../shared/fanfic-starters.mjs');
+  const f=await fixture(t);
+  const openings=new Set(),constraints=new Set(),styles=new Set();
+  for(const starter of fanficStarters)for(const start of starter.starts){
+    const hero={id:'town-observer',name:'Марта Рейн',description:'Привыкла замечать изменения в привычных мелочах. '.repeat(50)};
+    const payload=buildFanficStarter(starter.id,start.id,{originalPersona:hero});
+    const project=await f.success('/import',{project:payload});
+    const opening=project.episodes[0].brief.split('\n\n')[0];
+    const rules=project.lorebooks[0].entries.find(entry=>entry.constant&&entry.content!==start.setup);
+    assert.ok(rules?.content.length>120);
+    assert.ok(opening.length>90);
+    const lore=project.lorebooks[0].entries;
+    const detailed=lore.filter(entry=>entry.vectorWhenMemory);
+    assert.equal(lore.filter(entry=>entry.constant).length,1);
+    assert.ok(detailed.length>=5);
+    assert.ok(detailed.every(entry=>entry.enabled&&!entry.constant&&!entry.vectorized&&entry.content.length>=160&&entry.keys.length>=3));
+    assert.equal(new Set(lore.map(entry=>entry.id)).size,lore.length);
+    assert.equal(new Set(lore.map(entry=>entry.name)).size,lore.length);
+    assert.ok(project.characters.every(card=>card.description&&card.personality&&card.appearance));
+    const compact=buildFanficMessages({project,episode:project.episodes[0],connection:{contextWindow:2048},maxTokensOverride:256});
+    assert.equal(compact.included.cast[0],hero.id);
+    assert.match(compact.messages[1].content,/Марта Рейн/);
+    assert.match(compact.messages[1].content,/WRITING SETTINGS/);
+    assert.ok(compact.tokens+compact.maxTokens+100<=2048);
+    openings.add(opening);
+    constraints.add(rules.content);
+    styles.add(project.settings.style);
+  }
+  const count=fanficStarters.reduce((sum,starter)=>sum+starter.starts.length,0);
+  assert.equal(openings.size,count);
+  assert.equal(constraints.size,count);
+  assert.equal(styles.size,4);
+});
+
+test('A starter uses saved style, tense and perspective during planning, writing and local selected rewrite',async t=>{
+  const {buildFanficStarter}=await import('../shared/fanfic-starters.mjs');
+  const f=await fixture(t);
+  const state=f.getState();
+  state.connections.push({id:'sas-local',baseUrl:'http://127.0.0.1:9999/v1',model:'mock-local',contextWindow:4096});
+  f.saveState(state);
+  const payload=buildFanficStarter('edgerunners','night-city',{canonCharacter:'edgerunners-lucy'});
+  const initial=await f.success('/import',{project:payload});
+  const voice={style:'Рубленые фразы и городской шум',perspective:'Первое лицо',tense:'Настоящее'};
+  const project=await f.success('/projects/'+initial.id,{settings:{...voice,connectionId:'sas-local',sceneCount:1,continuityCheck:false}},'PATCH');
+  const path=episodePath(project.id,project.episodes[0].id);
+  const assertVoice=prompt=>{for(const text of Object.values(voice))assert.ok(prompt.includes(text));};
+  f.setStructured(args=>{
+    if(args.name==='fanfic_outline'){
+      assertVoice(args.context.request);
+      return args.parse({scenes:[{title:'На платформе',summary:'Люси проверяет два сообщения.'}]});
+    }
+    assert.equal(args.name,'fanfic_rewrite');
+    assert.deepEqual(args.context.voice,voice);
+    assert.equal(args.context.source,'Я вижу свет.');
+    return args.parse({replacement:'Я щурюсь на свет.'});
+  });
+  f.setStream(async function*(call){
+    assertVoice(call.messages[1].content);
+    assert.match(call.messages[1].content,/Люси/);
+    yield 'Я вижу свет. Поезд не приходит.';
+  });
+  await generate(f,path,{action:'write'});
+  const draft=episodeIn(f,project.id,project.episodes[0].id);
+  assert.equal(draft.content,'Я вижу свет. Поезд не приходит.');
+  assert.equal(f.vectorCalls.length,0);
+  await generate(f,path,{action:'rewrite',instructions:'Добавь жест.',selectionStart:0,selectionEnd:'Я вижу свет.'.length,expectedRevision:draft.revision});
+  assert.equal(episodeIn(f,project.id,draft.id).content,'Я щурюсь на свет. Поезд не приходит.');
+});
+
+test('Starter works keep their alternative branch and imported lore isolated while allowing local portrait and lore edits',async t=>{
+  const {buildFanficStarter,fanficStarters}=await import('../shared/fanfic-starters.mjs');
+  const f=await fixture(t);
+  for (const template of fanficStarters) {
+    for (const start of template.starts) {
+      const first=template.id+'-'+start.cast[0],payload=buildFanficStarter(template.id,start.id,{canonCharacter:first});
+      assert.equal(payload.personas[0].id,first);
+      assert.equal(payload.characters.some(card=>card.id===first),false);
+      assert.ok(payload.episodes[0].brief.includes(start.pivot));
+      assert.ok(payload.lorebooks[0].entries.some(entry=>entry.constant));
+    }
+  }
+  const raw=buildFanficStarter('sao','war',{originalPersona:{id:'custom-hero',name:'Марина',personality:'Осмотрительна.'}});
+  const project=await f.success('/import',{project:raw});
+  const other=await f.success('/import',{project:raw});
+  assert.equal(project.personas[0].name,'Марина');
+  assert.equal(project.episodes[0].status,'draft');
+  assert.equal(project.episodes[0].season,3);
+  assert.match(project.episodes[0].title,/Alicization · Война в Underworld/u);
+  const run='/projects/'+project.id,book=project.lorebooks[0];
+  assert.ok(book.entries.some(entry=>entry.vectorWhenMemory));
+  const variant=buildFanficStarter('sao','ordinal').lorebooks[0];
+  assert.ok(variant.entries.some(entry=>/Augma/u.test(entry.name)));
+  assert.ok(book.entries.every(entry=>!/Augma/u.test(entry.content)));
+  assert.ok(variant.entries.every(entry=>!/Тёмная Территория|Беркули|Тёмный Император/u.test(entry.content)));
+  const local=await f.success(run,{lorebook:{...book,entries:[...book.entries,{name:'Договор',content:'Маяк открыт для укрытия.',keys:['маяк']}]}},'PATCH');
+  assert.equal(local.lorebooks[0].entries.at(-1).name,'Договор');
+  const detail=book.entries.find(entry=>entry.vectorWhenMemory);
+  const changed=await f.success(run,{lorebook:{...local.lorebooks[0],entries:local.lorebooks[0].entries.map(entry=>entry.id===detail.id?{...entry,vectorWhenMemory:false,vectorized:true}:entry)}},'PATCH');
+  const exported=await f.success(run+'/export');
+  assert.equal(changed.lorebooks[0].entries.find(entry=>entry.id===detail.id).vectorized,true);
+  assert.equal(exported.project.lorebooks[0].entries.find(entry=>entry.id===detail.id).vectorWhenMemory,false);
+  assert.equal(projectIn(f,other.id).lorebooks[0].entries.find(entry=>entry.id===detail.id).vectorWhenMemory,true);
+  assert.equal(projectIn(f,other.id).lorebooks[0].entries.some(entry=>entry.name==='Договор'),false);
+  assert.equal((await f.request(run,{expectedUpdatedAt:'outdated',lorebook:book},'PATCH')).status,409);
+  const avatar='data:image/png;base64,YWJj';
+  await f.success(run+'/portraits/'+project.characters[0].id,{avatar},'PATCH');
+  assert.equal(projectIn(f,project.id).characters[0].avatar,avatar);
+  assert.notEqual(projectIn(f,other.id).characters[0].avatar,avatar);
+  assert.equal((await f.request(run+'/portraits/'+project.characters[0].id,{avatar:'https://example.com/p.png'},'PATCH')).status,400);
+});
+
+test('A short prose request does not activate a deal merely because both mention two offers or sentences',async()=>{
+  const {buildFanficStarter}=await import('../shared/fanfic-starters.mjs');
+  const {selectFanficLore}=await import('../server/fanfic-context.mjs');
+  const work=buildFanficStarter('edgerunners','night-city');
+  const request='Люси предупреждает о повторном включении Сандевистана. Два предложения.';
+  const relevant=selectFanficLore(work,work.episodes[0].brief+' '+request,[],{focus:request});
+  const implant=relevant.findIndex(entry=>entry.name==='Сандевистан и предел ускорения');
+  const delivery=relevant.findIndex(entry=>entry.name==='Повторная ячейка в графике доставки');
+  assert.ok(implant>=0);
+  assert.ok(delivery<0||delivery>implant);
+  const explicit=selectFanficLore(work,'Кто прислал два предложения за ячейку?');
+  assert.ok(explicit.some(entry=>entry.name==='Повторная ячейка в графике доставки'&&entry.reason==='keyword'));
+});
+
+
+test('Every starter has a bilingual lorebook, checked local artwork and valid cast choices',async()=>{
+  const {buildFanficStarter,fanficStarters}=await import('../shared/fanfic-starters.mjs');
+  const {localizeFanficLorebooks}=await import('../shared/fanfic-lore-localization.mjs');
+  let count=0;
+  for(const template of fanficStarters){
+    const cover=await fs.readFile(new URL('../public/fanfic-templates/'+template.id+'-cover.webp',import.meta.url));
+    assert.equal(cover.toString('ascii',8,12),'WEBP');
+    for(const start of template.starts){
+      const work=buildFanficStarter(template.id,start.id,{loreLanguage:'en'});
+      const [original]=work.lorebooks,[english]=await localizeFanficLorebooks(work.lorebooks);
+      assert.equal(english.entries.length,original.entries.length);
+      assert.ok(Number.isInteger(start.season));
+      assert.ok((start.source??template.source).startsWith('https://'));
+      assert.ok(work.characters.length>=3);
+      for(const card of work.characters){
+        const expectedId=start.id==='alicization'&&card.id==='sao-alice'?'sao-alice-rulid':card.id;
+        assert.ok(card.avatar?.endsWith('/'+expectedId+'.webp'));
+        const portrait=await fs.readFile(new URL('../public'+card.avatar,import.meta.url));
+        assert.equal(portrait.toString('ascii',8,12),'WEBP');
+      }
+      english.entries.forEach((entry,i)=>{
+        assert.equal(entry.id,original.entries[i].id);
+        assert.notEqual(entry.content,original.entries[i].content,entry.name);
+        assert.doesNotMatch(entry.content,/\p{Script=Cyrillic}/u,entry.name);
+        assert.deepEqual(entry.keys,original.entries[i].keys);
+        if(i>1)assert.ok(entry.keys.some(key=>/\p{Script=Latin}/u.test(key)&&!/\p{Script=Cyrillic}/u.test(key)),entry.name);
+      });
+      count++;
+    }
+  }
+  assert.equal(count,16);
+});
+
+test('A work chooses its lorebook language independently, preserves edits, and sends localized lore to embeddings and prose',async t=>{
+  const {buildFanficStarter}=await import('../shared/fanfic-starters.mjs');
+  const {loadFanficLoreLocale,localizeFanficLorebooks}=await import('../shared/fanfic-lore-localization.mjs');
+  const f=await fixture(t);
+  const raw=buildFanficStarter('edgerunners','night-city',{loreLanguage:'en'});
+  Object.assign(raw.settings,{writingLanguage:'en',sceneCount:1,continuityCheck:false,vectorMemory:true});
+  raw.episodes[0].brief='The characters watch a helicopter arrive.';
+  const project=await f.success('/import',{project:raw});
+  const [original]=project.lorebooks,[english]=await localizeFanficLorebooks(project.lorebooks);
+  assert.equal(original.language,'en');
+  assert.equal(english.name,'Cyberpunk: Edgerunners');
+  const match=english.entries.find(entry=>entry.name==='Trauma Team and medical access');
+  const episode=project.episodes[0],workPath='/projects/'+project.id,path=episodePath(project.id,episode.id);
+  const context=await f.success(path+'/context',{instructions:'Who has medical coverage?'});
+  assert.ok(context.report.selectedLore.some(item=>item.name===match.name&&item.reason==='keyword'&&item.included));
+  assert.ok(f.vectorCalls.some(call=>call.some(document=>document.includes(match.content))));
+  f.setStructured(args=>{
+    if(args.name==='fanfic_memory')return {summary:'Important facts: '+args.context.prose,location:'',relationships:[],openThreads:[]};
+    assert.match(args.instructions,/Write in English/);
+    return {scenes:[{title:'Medics arriving',summary:'Lucy checks the patient.'}]};
+  });
+  let responses=0;
+  f.setStream(async function*(call){
+    assert.match(call.messages[0].content,/Write in English/);
+    yield ++responses===1?'Вертолёт прибыл на место, а Люси осталась ждать на платформе.':'Lucy waited for the patient.';
+  });
+  await generate(f,path,{action:'write',instructions:'Lucy questions the team about medical coverage.'});
+  assert.equal(responses,2);
+  assert.equal(episodeIn(f,project.id,episode.id).content,'Lucy waited for the patient.');
+  await generate(f,path,{action:'approve'});
+  assert.equal(episodeIn(f,project.id,episode.id).status,'approved');
+
+  const locale=await loadFanficLoreLocale(project.lorebooks),draft=structuredClone(english);
+  draft.language='ru';
+  draft.entries.at(-1).content='Это моё изменение и остаётся моим.';
+  const saved=await f.success(workPath,{lorebook:locale.restore(draft,original)},'PATCH');
+  assert.equal(saved.lorebooks[0].entries.at(-1).content,draft.entries.at(-1).content);
+  assert.equal(saved.lorebooks[0].entries.find(entry=>entry.id===match.id).name,'Trauma Team и медицинский доступ');
+
+  const restored=await f.success(workPath,{lorebook:{...saved.lorebooks[0],language:'en'}},'PATCH');
+  assert.equal(restored.episodes[0].revision,saved.episodes[0].revision);
+  assert.equal(restored.episodes[0].status,'approved');
+  assert.deepEqual(restored.episodes[0].memory,saved.episodes[0].memory);
+  const [shown]=await localizeFanficLorebooks(restored.lorebooks);
+  assert.equal(shown.entries.at(-1).content,draft.entries.at(-1).content);
+  assert.equal(shown.entries.find(entry=>entry.id===match.id).content,match.content);
+  const imported=await f.success('/import',await f.success(workPath+'/export'));
+  assert.equal(imported.lorebooks[0].language,'en');
+  assert.equal(imported.settings.writingLanguage,'en');
+  assert.equal(imported.episodes[0].status,'draft');
+  assert.equal(imported.episodes[0].memory,null);
+});
+
+test('Fanfic import rejects unrelated files without creating an empty work',async t=>{
+  const f=await fixture(t);
+  assert.equal((await f.request('/import',{spec:'chara_card_v2',data:{name:'NPC'}})).status,400);
+  assert.equal((await f.request('/import',{spec:'sas_fanfic_v1',project:null})).status,400);
+  assert.equal((await f.request('/import',{title:'Settings',options:{}})).status,400);
+  assert.equal(f.getState().fanficProjects.length,0);
+});
+
+test('All sixteen fanfic openings expand their supporting cast with local portraits, branch notes and bilingual lore',async()=>{
+  const {buildFanficStarter,fanficStarters}=await import('../shared/fanfic-starters.mjs');
+  const {localizeFanficLorebooks}=await import('../shared/fanfic-lore-localization.mjs');
+  const {selectFanficLore}=await import('../server/fanfic-context.mjs');
+  const seen=new Set();
+  for(const template of fanficStarters)for(const start of template.starts){
+    const ids=Object.keys(start.support);
+    assert.ok(ids.length>=2,start.id);
+    assert.equal(new Set(start.cast).size,start.cast.length,start.id);
+    const work=buildFanficStarter(template.id,start.id,{loreLanguage:'en'});
+    const [english]=await localizeFanficLorebooks(work.lorebooks);
+    const marker=template.id+'-'+start.id+'-cast-';
+    const russianNotes=work.lorebooks[0].entries.filter(entry=>entry.id.startsWith(marker));
+    const englishNotes=english.entries.filter(entry=>entry.id.startsWith(marker));
+    assert.equal(russianNotes.length,2,start.id);
+    assert.equal(englishNotes.length,2,start.id);
+    assert.ok(russianNotes.every(entry=>entry.vectorWhenMemory&&!entry.constant),start.id);
+    assert.equal(new Set(english.entries.map(entry=>entry.id)).size,english.entries.length,start.id);
+    for(const id of ids){
+      const card=work.characters.find(item=>item.id===template.id+'-'+id);
+      assert.ok(card?.exampleDialogue&&card.scenario&&card.aliases.length,start.id+' '+id);
+      assert.match(card.avatar,/\.webp$/u);
+      assert.ok(selectFanficLore(work,card.name).some(entry=>entry.id.startsWith(english.id+':'+marker)&&entry.reason==='keyword'),card.name);
+      const englishAlias=card.aliases.find(alias=>/^[a-z]/i.test(alias));
+      assert.ok(selectFanficLore({...work,lorebooks:[english]},englishAlias).some(entry=>entry.id.startsWith(english.id+':'+marker)&&entry.reason==='keyword'),englishAlias);
+      const lead=buildFanficStarter(template.id,start.id,{canonCharacter:card.id});
+      assert.equal(lead.personas[0].id,card.id);
+      assert.ok(lead.episodes[0].brief.split('\n\n')[0].includes(card.scenario));
+      assert.match(lead.episodes[0].brief,/Общая завязка ветки/u);
+      assert.ok(!lead.characters.some(character=>character.id===card.id));
+      seen.add(card.id);
+    }
+  }
+  assert.equal(seen.size,35);
+});
+
+test('Supporting cast aliases prioritize the named viewpoint and topical lore in a bounded prompt',async t=>{
+  const {buildFanficStarter}=await import('../shared/fanfic-starters.mjs');
+  const f=await fixture(t);
+  const state=f.getState();
+  state.connections[0].contextWindow=4096;
+  f.saveState(state);
+  const work=buildFanficStarter('sao','rosario',{canonCharacter:'sao-asuna',loreLanguage:'en'});
+  const p=await f.success('/import',{project:work});
+  const ep=p.episodes[0],route=episodePath(p.id,ep.id)+'/context';
+  assert.deepEqual(p.characters.find(card=>card.id==='sao-siune').aliases,['Сиуне','Siune','Siune the healer']);
+  const preview=await f.success(route,{instructions:'Let Siune choose the order of support in the raid.'});
+  assert.ok(preview.report.queryPlan.participants.some(person=>person.id==='sao-siune'));
+  assert.equal(preview.report.includedCast[0],'sao-asuna');
+  assert.equal(preview.report.includedCast[1],'sao-siune');
+  assert.ok(preview.report.selectedLore.some(row=>row.name==='Siune, Jun, and a role for each raider'&&row.reason==='keyword'&&row.included));
+  assert.ok(!preview.report.selectedLore.some(row=>row.name.includes('AR witnesses')));
+});
+
+test('Character aliases do not activate unrelated short English words or cross alternate SAO starts',async()=>{
+  const {buildFanficStarter}=await import('../shared/fanfic-starters.mjs');
+  const {selectFanficLore,fanficQueryPlan,rankFanficCast}=await import('../server/fanfic-context.mjs');
+  const ggo=buildFanficStarter('sao','ggo');
+  assert.ok(!selectFanficLore(ggo,'Organize the evacuation.').some(entry=>entry.id.includes('shinc-scouts')));
+  assert.ok(!selectFanficLore(ggo,'Clarence met Shirley.').some(entry=>entry.id.includes('third-jam-rivals')));
+  assert.equal(fanficQueryPlan({project:ggo,episode:{brief:''},instructions:'What did Eva see?'}).participants[0]?.id,'sao-boss');
+  const vinland=buildFanficStarter('vinland','iceland');
+  assert.equal(fanficQueryPlan({project:vinland,episode:{brief:''},instructions:'Спросите Рагнара о письме.'}).participants[0]?.id,'vinland-ragnar');
+  assert.equal(rankFanficCast(vinland,'Спроси Рагнара о письме Кнуда.', '')[0].id,'vinland-ragnar');
+  const rosario=buildFanficStarter('sao','rosario');
+  assert.ok(!selectFanficLore(rosario,'The update arrives in June.').some(entry=>entry.id.includes('members-and-roles')));
+  assert.ok(selectFanficLore(rosario,'Jun prepares for the raid.').some(entry=>entry.id.includes('members-and-roles')));
 });

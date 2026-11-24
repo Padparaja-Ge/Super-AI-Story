@@ -1,0 +1,73 @@
+// Each row lists the source title, English title, and English reference text.
+export default {
+  "sao-aincrad": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Players learn in the first town that the log-out button is gone. Defeat has real consequences. Groups discuss how to clear the first floor."],
+    ["Условия выбранной ветки","Branch conditions","Aincrad, floor one. Log-out is unavailable and avatar death is irreversible. The safe zone does not protect outside routes. Kirito's beta knowledge is incomplete after release changes."],
+    ["Город Начал и граница защиты","The Town of Beginnings and the safe-zone boundary","The town is a place to rest, buy supplies, and trade information. Normal encounter rules apply past the gates. Decide on provisions, a return route, and a meeting point if the party scatters."],
+    ["НервГир и цена поражения","NerveGear and the cost of defeat","In the original Aincrad an avatar cannot respawn. In-game death kills the player. The log-out command is unavailable and reports of safe disconnection need verification. Fear and reliance on others shape early choices."],
+    ["Навыки меча и смена бойца","Sword Skills and switching attackers","A system skill accelerates a practiced sequence and leaves a brief recovery period. An ally can engage the enemy then. Coordination depends on timing, distance, and a clear signal. Aincrad has no combat magic."],
+    ["Кирито и предел бета-опыта","Kirito and the limits of his beta knowledge","Kirito remembers early routes, but release may change monsters, quests, and rewards. He shares observations plainly and is careful about promises with players who distrust beta testers."],
+    ["Арго и цена точной карты","Argo and the price of an accurate map","Argo compares accounts and bargains for information. Some sources are confidential. Distinguish her notes, a trader's rumor, and what the party actually saw outside the gate."],
+    ["Асуна в начале пути","Asuna at the start of her journey","Asuna is still learning on the first floor. She checks proposed routes and who looks after beginners. Her later titles and relationships do not exist yet. Trust can grow from dispute, agreement, or help."]
+  ]},
+  "sao-fairy": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Some players have not awakened after Aincrad. In ALfheim, a lead points to the World Tree. Leafa knows routes Kirito can use."],
+    ["Условия выбранной ветки","Branch conditions","ALfheim Online has its own flight and magic rules. Ground and air have different dangers. Ordinary defeat follows ALO rules. Kirito seeks Asuna and Leafa helps him navigate. Avatar and real identities differ."],
+    ["Сильвейн и союз на границе","Sylvain and the border alliance","Leafa knows this Sylph city better than Kirito. Flight does not override local agreements or faction disputes. A guide may want help for her own people. Negotiation can open routes just as scouting can."],
+    ["Крылья, стихии и возвращение","Wings, elements, and returning safely","Wings change how characters scout and pursue. Flight requires practice and airtime is limited. ALO has magic and racial differences. Ordinary defeat does not impose Aincrad's fatal rules."],
+    ["Мировое древо и права доступа","The World Tree and access rights","The summit is a group-quest goal and height alone cannot get a player there. Finding a route, passing guards, and bypassing access restrictions are separate tasks. Reaching the captive does not guarantee an immediate exit."],
+    ["Лифа, Сугуха и разные личности","Leafa, Suguha, and separate identities","Leafa knows flight, Sylph etiquette, and the way from Sylvain. She gives practical help and challenges dangerous shortcuts. Kirito can connect Leafa to Suguha only through events in this branch."],
+    ["Кирито, спригган и Юи","Kirito, the Spriggan, and Yui","Kirito enters ALO as a Spriggan. His reflexes and close combat help, but many rules are new. Yui acts as a personal pixie and can interpret the interface within her access rights. She is no administrator."],
+    ["Асуна ищет собственный выход","Asuna looks for her own exit","Asuna is restricted by location and system access. She can watch routines, spot mistakes, and leave a trace. Kirito knows what he is told or verifies. A shared goal does not make their knowledge of her captivity identical."]
+  ]},
+  "sao-extra": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Aincrad survivors compare their memories. The friends meet in ALO for an underwater quest that requires preparation."],
+    ["Условия выбранной ветки","Branch conditions","The dive depends on preparation and suitable equipment. Friends can recall earlier events in their own voices. The active adventure remains this new dive."],
+    ["Бассейн и навык Сугухи","The pool and Suguha's swimming","Training starts outside the game. Suguha flies confidently as Leafa but is anxious in water and learns with Asuna and friends. Short practice and support build skill. One success does not erase fear."],
+    ["Цель Юи и спуск в ALO","Yui's wish and the dive into ALO","Yui wants to see a whale, so the friends plan the underwater quest. Choose equipment and the specific dive conditions. Her wish gives the adventure a reason without making a whale appear on demand."],
+    ["Подводные сигналы и возвращение","Underwater signals and getting back","Current and foggy water make it difficult to stay together. Agree on simple signals and a gathering point. A broken signal line shows trouble without revealing the other group's location, fate, or who caused it."],
+    ["Асуна и помощь без давления","Asuna helps without pressure","Asuna adjusts the exercise to Suguha and lets others decline roles. She checks who leads and who keeps watch. Care takes the form of concrete agreements."],
+    ["Кадзуто вспоминает Айнкрад","Kazuto remembers Aincrad","Kazuto remembers his part. A friend may remember a different event or know nothing about it. Let the underwater quest continue in the present rather than replaying Aincrad."],
+    ["Решение о поиске соседней группы","Whether to search for the other party","A trace could be a distress call, a remnant of an earlier dive, or a quest feature. Surface for help, coordinate, or check a limited area. Air, time, and the group's condition give each choice a price."]
+  ]},
+  "sao-phantom": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Kirito enters GGO to investigate a link between in-game attacks and real events. Sinon knows the tournament and its players."],
+    ["Условия выбранной ветки","Branch conditions","GGO rewards firearms, cover, sightlines, and warning lines. Sinon is an experienced sniper. A match log and real-world evidence are separate. A shared timestamp does not prove cause."],
+    ["Мёртвый Стрелок и проверяемые факты","Death Gun and what can be verified","Kikuoka asks Kazuto to investigate real deaths that coincided with shots from the Death Gun avatar. Timing is established. Tournament witnesses and Kirito need new evidence to explain the cause or identify the gunman."],
+    ["Турнир Bullet of Bullets","Bullet of Bullets","Bullet of Bullets is an individual event. Squad Jam is the team event. Registration, the bracket, and meetings offer different kinds of evidence. The avatar name on a list does not show where the player was physically."],
+    ["Синон и взгляд с позиции","Sinon and the view from her position","Sinon talks through sightline, exposed area, and next move. Hecate II is her precision long-range weapon. Confirm a target she cannot see. Her own motives emerge only through what she shares or does."],
+    ["Кирито и световой меч","Kirito and the Photon Sword","A swordsman's instincts help with close movement. The photon sword obeys GGO rules. It cannot remove open distance, poor cover, or inexperience with firearms. Sinon knows the systems better and can challenge him."],
+    ["Маршруты и следы в Глоккене","Routes and evidence in SBC Glocken","Shops, offices, and meeting points offer narrow leads. Compare the avatar name, time in the game, and an independent account from outside. A shopkeeper or a match record confirms only its own part."],
+    ["Внешняя сторона расследования","Outside the investigation","Asuna knows what she is told or independently learns. Proximity to Kirito does not let her see through his eyes. Doubt can change their agreement. Choosing whether to trust a witness remains open."]
+  ]},
+  "sao-calibur": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","The party receives a request about a disaster near Jotunheim and the sword Excalibur. Its members know different parts of the area."],
+    ["Условия выбранной ветки","Branch conditions","Jotunheim in ALO. Excalibur is a quest objective. Inhabitants pursue their own interests. Narrow passages limit the usefulness of flight."],
+    ["Йотунхейм под Альфхеймом","Jotunheim below ALfheim","An icy dungeon lies below familiar aerial routes. Assign someone to find the way, hold the passage, or help local beings. Check whether flight works in this part before relying on wings."],
+    ["Урд и условия помощи","Urd and the terms of her request","Urd asks the party to protect Jotunheim from frost giants. She cares what happens after the group leaves. Her request establishes her goal, and the party can verify the threat, request a guide, or propose a different priority."],
+    ["Тонки и надёжность переправы","Tonkii and whether the crossing is safe","Leafa has a bond with Tonkii. Its help changes available routes but does not guarantee speed or safety. Establish where they met and whether Tonkii will help again."],
+    ["Экскалибур и смысл награды","Excalibur and the meaning of the reward","The sword is a quest objective rather than a character's starting equipment. Track its location and claim conditions. Reaching the hall, verifying the exit, and leaving with the prize are separate tasks."],
+    ["Жители и замок Трюма","The inhabitants and Thrym's castle","Thrym and the frost giants have an objective. A clash at a passage does not show all their positions. Negotiation, diversion, and help for local people each carry different risks and costs."],
+    ["Роли группы у развилки","Party roles at the fork","Kirito proposes a plan, Leafa knows routes, Asuna sees risks to the party, and Sinon looks for a clear position. Agree on roles, signals, and retreat conditions. Prior experience alone does not settle which use of time is best."]
+  ]},
+  "sao-rosario": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Asuna meets Yuuki and the Sleeping Knights. The guild wants an achievement its members will remember together."],
+    ["Условия выбранной ветки","Branch conditions","Asuna and Yuuki meet through ALO. Trust takes time. The Sleeping Knights want a common achievement. Yuuki chooses when to disclose her personal reasons."],
+    ["Спящие рыцари и памятная цель","The Sleeping Knights and a lasting memory","Yuuki leads a small guild that cares about sharing a memory after their time in ALO. Asuna is a potential ally. Her role is open to discussion without promising a victory."],
+    ["Седьмое место в группе","The seventh raid slot","Ordinary floor raids use several parties. Yuuki proposes risking one party: six guild members and Asuna if she agrees. The slot limit determines commitments and roles, without guaranteeing that everyone survives the fight."],
+    ["Двадцать седьмой этаж и памятник","The twenty-seventh floor and the monument","The raid on New Aincrad's twenty-seventh floor weighs speed against preparation. The Monument of Swordsmen matters more to the guild than random loot. Decide who goes and who has a right to the first attempt."],
+    ["Юки и право на личный рассказ","Yuuki decides what to share","Yuuki speaks directly and likes to see how people act. Help does not oblige her to disclose private information. Personal medical details and future revelations require a source in this branch."],
+    ["Асуна принимает решение сама","Asuna makes her own decision","Asuna reads battle rhythm and notices who is left out. She can refuse an offer if entry terms are unclear. Shared choices gradually establish trust."],
+    ["Перехват сведений о боссе","Intercepted boss intelligence","A rival raid party can receive partial notes about the boss. Establish who passed them on and what can be checked. Sharing an attempt or exercising caution stays open. One observation does not reveal a boss's full pattern."]
+  ]},
+  "sao-ordinal": {name: "Sword Art Online", entries: [
+    ["Точка старта","Opening situation","Augma brings AR battles into city streets. Yuna appears at events. Some Aincrad survivors report unusual memory gaps."],
+    ["Условия выбранной ветки","Branch conditions","Augma overlays Ordinal Scale on the real city. Traffic, crowds, and physical fatigue still matter. Separate recorded device events, eyewitness reports, and missing memories."],
+    ["Augma на улицах города","Augma in the city streets","Augma layers game elements over real places. Keep footing, traffic, distance, and fatigue in play. Check what each device displays and whether a separate witness saw anything outside the overlay."],
+    ["Рейтинги и приглашения Ordinal Scale","Ordinal Scale rankings and invitations","Rank and invitations can determine access and public visibility. A high score does not reveal who runs an event. Compare schedules displayed on different devices against independent records."],
+    ["Асуна и расхождение в показаниях","Asuna and conflicting witness accounts","Asuna distinguishes her own memory, the Augma display, and another person's testimony. A mismatch justifies further investigation without identifying who caused a memory gap."],
+    ["Кирито и физический предел","Kirito and physical limits","Real streets impose actual conditioning, footing, and familiar obstacles. VR fencing helps Kirito notice patterns without granting the same endurance and speed to his body."],
+    ["Эйдзи и Юна перед раскрытием","Eiji and Yuna before the revelation","Eiji is an able AR duelist and protects his motives. Yuna appears publicly as a virtual singer. Their ties to past events need evidence available to these characters now."],
+    ["Воспоминания бывших игроков","The missing memories of former players","Each survivor remembers their own part of Aincrad. A gap can be checked against a personal note or someone's account. Motives and private memories stay attached to their owners."]
+  ]}
+};

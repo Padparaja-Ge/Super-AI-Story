@@ -36,6 +36,10 @@ export function modelDestination(modelsDir, repo, file) {
   return destination;
 }
 
+// Vision projectors (mmproj) and later shards of a split model are loaded through
+// another file and cannot be started as a model on their own.
+export const auxiliaryGguf = name => /(?:^|[-_.])mmproj(?:[-_.]|$)/i.test(name) || /-(?!00001-)\d{5}-of-\d{5}\.gguf$/i.test(name);
+
 async function checkNoLinks(root, destination) {
   const relative = path.relative(path.resolve(root), path.resolve(destination));
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Недопустимый путь модели.');
@@ -260,7 +264,7 @@ export function createIntegrationRouter({getState, saveState, getSecret = () => 
         const absolute = path.join(directory, entry.name);
         if (entry.isSymbolicLink()||entry.name==='.sas-compat') continue;
         if (entry.isDirectory()) await scan(absolute, depth + 1);
-        else if (entry.isFile() && /\.gguf$/i.test(entry.name)) {
+        else if (entry.isFile() && /\.gguf$/i.test(entry.name) && !auxiliaryGguf(entry.name)) {
           const stat = await fs.stat(absolute).catch(() => null);
           if (stat) models.push({name:path.relative(modelsDir, absolute).split(path.sep).join('/'), path:absolute, size:stat.size});
         }
@@ -313,7 +317,7 @@ export function createIntegrationRouter({getState, saveState, getSecret = () => 
         if(entry.isSymbolicLink()||entry.name==='.sas-compat')continue;
         const target=path.join(dir,entry.name);
         if(entry.isDirectory())await scan(target,depth+1);
-        else if(entry.isFile()&&/\.gguf$/i.test(entry.name)&&(!/-\d{5}-of-\d{5}\.gguf$/i.test(entry.name)||/-00001-of-\d{5}\.gguf$/i.test(entry.name))){await assertGguf(target);added.push(target);}
+        else if(entry.isFile()&&/\.gguf$/i.test(entry.name)&&!auxiliaryGguf(entry.name)){await assertGguf(target);added.push(target);}
       }
     };
     if((await fs.stat(real)).isDirectory())await scan(real);else {if(!/\.gguf$/i.test(real))throw new Error('Выберите файл GGUF.');await assertGguf(real);added.push(real);}

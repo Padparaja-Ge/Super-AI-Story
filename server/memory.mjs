@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import {complete,getConnection,countCompletionTokens} from './llm.mjs';
 import {messageTokens} from './prompt.mjs';
 
-export const memoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,memoryBudget:1200};
+export const memoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,archiveMemory:false,archiveMemoryVersion:1,memoryBudget:1200};
 const hash=text=>crypto.createHash('sha256').update(text).digest('hex');
 const fingerprint=m=>hash(m.role+'\n'+m.content);
 export function validMemory(chat){
@@ -23,7 +23,7 @@ export function pendingMemory(chat){
 }
 export function memoryDue(chat){const pending=pendingMemory(chat);return !!chat.memorySettings?.autoSummary&&new Set(pending.map(p=>p.id)).size>=Math.max(2,Number(chat.memorySettings.summaryInterval)||15);}
 export function createMemory({getState,saveState,getSecret,completion=complete,countTokens=countCompletionTokens}){
- async function summarize(chatId,{signal,onProgress=()=>{}}={}){
+ async function summarize(chatId,{signal,onProgress=()=>{},maxBlocks=Infinity}={}){
   const state=getState(),chat=state.chats.find(c=>c.id===chatId);if(!chat)throw new Error('История не найдена.');
   const connection=getConnection(state,chat),context=Math.max(256,Number(connection.contextWindow)||8192),maxTokens=Math.min(800,Number(connection.maxTokens)||800,Math.floor(context/4));
   const system='Сожми фрагмент истории в фактическую память на русском: ключевые события по порядку, участники, отношения, обещания, изменения состояния и незавершённые цели. Только факты из фрагмента, без выдумок. Не продолжай сцену. Кратко, до 180 слов.';
@@ -34,14 +34,14 @@ export function createMemory({getState,saveState,getSecret,completion=complete,c
    const text=p.text.slice(offset,offset+Math.min(2400,capacity-20));queue.push({...p,start:p.start+offset,end:p.start+offset+text.length,text});
   }
   const interval=Math.max(2,Math.min(100,Number(chat.memorySettings?.summaryInterval)||15));let completed=0;
-  while(queue.length){
+  while(queue.length&&completed<maxBlocks){
    signal?.throwIfAborted();const parts=[];let cost=0;
    while(queue.length&&parts.length<interval&&cost+queue[0].text.length+20<=capacity){const p=queue.shift();parts.push(p);cost+=p.text.length+20;}
    if(!parts.length)throw new Error('Для сводки нужен контекст модели хотя бы 512 токенов.');
    onProgress(`Сводка: сообщения ${parts[0].index+1}–${parts.at(-1).index+1} · осталось фрагментов ${queue.length}`);
    let messages;
    for(;;){
-    messages=[{role:'system',content:system},{role:'user',content:parts.map(p=>`${p.role}: ${p.text}`).join('\n')}];
+    messages=[{role:'system',content:system},{role:'user',content:parts.map(p=>{const name=chat.messages[p.index]?.name;return `${p.role}${name?` (${name})`:''}: ${p.text}`;}).join('\n')}];
     const actual=await countTokens(connection,getSecret(connection.id),messages,{signal,adaptInstruction:true,disableThinking:true});
     if(actual===null||actual<=context-maxTokens-32)break;
     if(parts.length>1){queue.unshift(parts.pop());continue;}

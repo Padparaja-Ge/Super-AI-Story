@@ -6,7 +6,7 @@
 
 SAS brings character cards, player personas, world lore, memory, illustrations and speech into one local workspace. Use your own GGUF model, connect a compatible API, or invite friends to a shared story.
 
-[Download SAS 0.9.11 for Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.11/SAS-Windows-0.9.11.zip) · [Releases](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [User guide](USER-GUIDE.md)
+[Download SAS 0.9.12 for Windows](https://github.com/Padparaja-Ge/Super-AI-Story/releases/download/v0.9.12/SAS-Windows-0.9.12.zip) · [Releases](https://github.com/Padparaja-Ge/Super-AI-Story/releases) · [User guide](USER-GUIDE.md)
 
 ## Features
 
@@ -14,6 +14,8 @@ SAS brings character cards, player personas, world lore, memory, illustrations a
 - **Fanfiction:** works, seasons and episodes; characters, canon and approved text.
 - **Multiplayer:** lobbies, shared RP and D&D sessions, host tools, music and voice chat.
 - **D&D and custom tabletop systems:** storybooks, rules, tactical maps, initiative, inventory and server-side action resolution.
+- **Archive memory (Beta 2):** retrieve evidence from the original events in the current story.
+- **New ways to play:** illustrated fanfiction templates, a shared room with multiple characters, GM styles and 3D dice in the D&D studio.
 - **Models and media:** llama.cpp with CPU/CUDA/Vulkan, compatible APIs, optional local embeddings, ComfyUI illustrations and speech engines.
 - **Extensions:** panels, pages, commands, styles and backend features through SAS API 2.
 
@@ -21,11 +23,11 @@ The interface supports **Russian, English, Japanese, Simplified Chinese and Kore
 
 ## Install on Windows
 
-1. Download **SAS-Windows-0.9.11.zip** for Windows 10/11 x64.
+1. Download **SAS-Windows-0.9.12.zip** for Windows 10/11 x64.
 2. Extract the entire archive into a separate folder and run **SAS.exe**. Keep <code>app/</code> and <code>engines/</code> beside it.
 3. Choose a GGUF model or configure an API under **Settings → Models and API**.
 
-The ready-made package needs no Node.js or compilation. The smaller **SAS-Start-0.9.11.zip** downloads and installs the same package when you run <code>Start-SAS.cmd</code>; this requires internet access. Chat models, embeddings and ComfyUI are selected separately.
+The ready-made package needs no Node.js or compilation. The smaller **SAS-Start-0.9.12.zip** downloads and installs the same package when you run <code>Start-SAS.cmd</code>; this requires internet access. Chat models, embeddings and ComfyUI are selected separately.
 
 <code>Start-SAS-Web.cmd</code> starts browser mode at **http://127.0.0.1:3212**. <code>Stop-SAS-Web.cmd</code> stops the server; <code>Repair-SAS.cmd</code> checks and restores files. Back up your data before upgrading.
 

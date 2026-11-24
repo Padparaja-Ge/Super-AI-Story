@@ -7,7 +7,9 @@ import http from 'node:http';
 import {createMultiplayer} from '../server/multiplayer.mjs';
 import {createMultiplayerClient} from '../server/multiplayer-client.mjs';
 import {sanitizeState} from '../server/store.mjs';
-import {createAdventureGame,adventureActor} from '../server/adventure-engine.mjs';
+import {createAdventureGame,adventureActor,adventureAction} from '../server/adventure-engine.mjs';
+import {upsertChallenge} from '../server/ability-checks.mjs';
+import {calculateTokenBudget} from '../server/rag/tokens.mjs';
 import {defaultAbilities} from '../shared/srp.mjs';
 import {beginInitiative} from '../server/initiative.mjs';
 import {fitNarrationPrompt,continuationInstruction,publicNarration,createNarrationContinuationJoiner,narrationContextHash} from '../server/room-narration.mjs';
@@ -26,9 +28,12 @@ test('Narration removes standalone round completion banners, preserving dialogue
  assert.equal(cleanNarration('— Раунд завершён, — сказал судья.'),'— Раунд завершён, — сказал судья.');
  assert.ok(narrationStops(2).includes('\nРаунд 2 заверш'));
 });
-async function fixture(t,reply,{mode='dnd',npc=false,npcDecision}={}){
+async function fixture(t,reply,{mode='dnd',npc=false,npcDecision,nativeTokens}={}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-narration-')),calls=[];
-  const provider=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw);calls.push(body);
+  const provider=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw);
+    if(nativeTokens&&req.url==='/apply-template'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({prompt:body.messages.map(m=>m.content).join('\n')}));return;}
+    if(nativeTokens&&req.url==='/tokenize'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({tokens:Array(nativeTokens(body.content)).fill(1)}));return;}
+    calls.push(body);
     if(body.messages[0].content.includes('You control only this NPC')){const context=JSON.parse(body.messages[1].content),actor=context.actor;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(npcDecision?npcDecision(context):{x:actor.x,y:actor.y,action:'pass',targetId:'',skillId:''})},finish_reason:'stop'}]}));return;}
     const next=await reply(body,calls),event={choices:[{delta:{content:next.text},...(next.reason?{finish_reason:next.reason}:{})}]};
     res.writeHead(200,{'Content-Type':'text/event-stream'});res.end('data: '+JSON.stringify(event)+'\n\n'+(next.eof?'':'data: [DONE]\n\n'));
@@ -215,6 +220,70 @@ test('Native-budget compaction never crops protected GM rules, engine resources 
   assert.deepEqual(priority,before);for(const p of priority)assert.ok(fitted.messages.some(m=>m.role===p.role&&m.content===p.content));assert.ok(fitted.actualTokens<=2048-300-32);assert.match(JSON.stringify(fitted.messages),/CODE_731|NPC_ATTACK_ALREADY_CALCULATED/);
 });
 
+test('Native 4096-token D&D request fits complete d20 outcomes and every new player intent without duplicating the table',async t=>{
+ const f=await fixture(t,body=>body.response_format?{text:JSON.stringify({valid:true,violations:[]}),reason:'stop'}:{text:'Торговец качает головой. Другому покупателю он предлагает щит. Гора остаётся неподвижной.',reason:'stop'},
+   {nativeTokens:prompt=>Math.ceil(calculateTokenBudget(prompt)*1.1)});
+ const s=f.state,room=s.multiplayer,game=room.tactical,connection=s.connections[0];
+ const previousId=connection.id;Object.assign(connection,{id:'sas-local',contextWindow:4096,maxTokens:1024,promptFormat:'alpaca'});
+ for(const chat of s.chats)if(chat.connectionId===previousId)chat.connectionId='sas-local';
+ s.activeConnectionId=room.connectionId='sas-local';s.settings.localSampling={...s.settings.localSampling,maxTokens:1024};
+ game.actors.push(adventureActor('second',{...persona,id:'second',name:'Мира'},game.rules),adventureActor('third',{...persona,id:'third',name:'Торк'},game.rules));
+ room.rulebookIds=['compact-test-rule'];
+ s.lorebooks.push({id:'compact-test-rule',name:'Правила авторства',entries:[{id:'r',name:'Метки',content:'COMPACT_TABLE_RULE: темнота на улице до нового события.',enabled:true}]});
+ room.messages=[{id:'prior-player',role:'user',content:'Где стоит торговец?',name:'Рей'},{id:'prior-gm',role:'assistant',content:'Торговец у окна. Полка пуста.'}];
+ Object.assign(game,{phase:'players',order:game.actors.map(actor=>actor.id),turn:0});
+ const attempts=[
+  {roll:2, outcome:'failure',checkType:'persuasion',intent:'Прошу торговца снизить цену меча до 8 монет.',request:'Точная цена меча 8 монет, маркер ПОСТ_110.'},
+  {roll:20,outcome:'success',checkType:'persuasion',intent:'Согласовать щит за 12 монет.',request:'Предлагаю 12 монет за щит, маркер ПОСТ_220.'},
+  {roll:20,outcome:'impossible',checkType:'strength',intent:'Сдвинуть гору.',request:'Пытаюсь сдвинуть гору, маркер ПОСТ_330.',impossible:true,impossibleReason:'Гора — часть неподвижного материка.'}
+ ];
+ for(const [i, attempt] of attempts.entries()){
+  const actor=game.actors[i],messageId='request-'+i;
+  room.messages.push({id:messageId,role:'user',name:actor.name,personaName:actor.name,userId:actor.id,content:attempt.request});
+  game.turn=i;
+  const challenge=upsertChallenge(game,{...attempt,name:'Сюжетная проверка '+(i+1),dc:15,actorId:actor.id,messageId});
+  const event=adventureAction(game,{action:'check',challengeId:challenge.id},actor.id,{host:i===0,random:()=>attempt.roll});
+  assert.equal(event.calculation.outcome,attempt.outcome);
+ }
+ game.turn=game.order.length;game.phase='gm';f.save(s);
+ const result=await f.room.generate();assert.equal(result.incomplete,false);
+ const request=f.calls.find(call=>!call.response_format),prompt=request.messages.map(message=>message.content).join('\n');
+ assert.equal(prompt.split('ТЕКУЩИЕ РЕСУРСЫ И ПОЗИЦИИ').length-1,1);
+ for(const token of ['ПОСТ_110','ПОСТ_220','ПОСТ_330'])assert.equal(prompt.split(token).length-1,1);
+ for(const outcome of ['failure','success','impossible'])assert.match(prompt,new RegExp('"outcome":"'+outcome+'"'));
+ assert.match(prompt,/Гора — часть неподвижного материка/);assert.match(prompt,/COMPACT_TABLE_RULE/);
+ const report=f.state.multiplayer.contextReport;
+ assert.equal(report.tokenizer,'model');assert.ok(report.actualTokens+request.max_tokens+32<=4096);
+ assert.deepEqual(report.checks.outcomes.map(({outcome})=>outcome),attempts.map(({outcome})=>outcome));
+ assert.equal(f.state.multiplayer.tactical.round,2);
+});
+
+test('A real-tokenizer probe can keep the best archive excerpt when the rough packer rejects it',async t=>{
+ const f=await fixture(t,()=>({text:'Арвин отвечает: «Серебряный клинок стоит десять монет».',reason:'stop'}),
+   {nativeTokens:prompt=>Math.ceil(calculateTokenBudget(prompt)*.54)});
+ const s=f.state,room=s.multiplayer,connection=s.connections[0];
+ const formerId=connection.id;Object.assign(connection,{id:'sas-local',contextWindow:4096,maxTokens:2048,promptFormat:'alpaca'});
+ for(const chat of s.chats)if(chat.connectionId===formerId)chat.connectionId='sas-local';
+ s.activeConnectionId=room.connectionId='sas-local';s.settings.localSampling={...s.settings.localSampling,maxTokens:2048};
+ room.memorySettings={...room.memorySettings,vectorMemory:true,archiveMemory:true};
+ const oldPrice='В записи ПРАЙСТАЛ73 утверждена цена: серебряный клинок стоит десять монет. '+('При печати учтены обязательные записи городского архива. '.repeat(9));
+ room.messages=[{id:'old-price',role:'assistant',content:oldPrice},...Array.from({length:11},(_,index)=>({id:'recent-'+index,role:'assistant',content:'Возле ворот стража проверяет документы проезжих.'})),
+   {id:'request',role:'user',name:'Рей',personaName:'Рей',userId:'host',content:'Напомни цену серебряного клинка из записи ПРАЙСТАЛ73.'}];
+ room.tactical.log.push({id:'bookkeeping',round:room.tactical.round,text:'Подтверждённые записи очереди: '+('Проверка печати и подписи не поменяла состояние участников. '.repeat(30))});
+ f.save(s);await f.room.generate();
+ const report=f.state.multiplayer.contextReport,request=f.calls.findLast(call=>call.stream===true);
+ assert.ok(report.sourceExcerpts.some(source=>source.messageId==='old-price'));
+ assert.ok(report.sources.some(source=>source.messageId==='old-price'),'Measured token space should retain the top-ranked archival quote');
+ assert.match(JSON.stringify(request.messages),/серебряный клинок стоит десять монет/);
+ assert.ok(report.rag.tokens>0);assert.ok(report.actualTokens+request.max_tokens+32<=4096);
+});
+
+test('Native fitting drops an optional reference and shrinks output only if the protected turn still needs space',async()=>{
+ const main={role:'system',content:'ENGINE_AUTHORITY'},request={role:'user',content:'CURRENT_PLAYER_REQUEST'},reference={role:'system',content:'OPTIONAL_WORLD',optional:true};
+ const result=await fitNarrationPrompt({contextWindow:4096},'', [reference],{gameBudget:true,maxTokens:1024,priorityMessages:[main,request],
+   countTokens:async(_c,_s,messages)=>messages.some(message=>message.content===reference.content)?3900:3300});
+ assert.deepEqual(result.messages,[main,request]);assert.equal(result.actualTokens,3300);assert.equal(result.maxTokens,764);
+});
 test('Oversized lore does not evict engine facts or four current player requests from D&D prompt',async t=>{
   const f=await fixture(t,()=>({text:'Герои дождались ответа.',reason:'stop'})),s=f.state;s.connections[0].contextWindow=4096;s.lorebooks=[{id:'huge',name:'Длинный лор',entries:[{id:'h',name:'Украшения',constant:true,content:'Многословные украшения мира. '.repeat(1500)}]}];s.multiplayer.lorebookIds=['huge'];s.multiplayer.tactical.actors[0].hp=17;s.multiplayer.tactical.actors[0].slots=3;s.multiplayer.tactical.actors[0].x=12;s.multiplayer.tactical.actors[0].y=4;s.multiplayer.tactical.log.push({id:'calc',round:1,text:'NPC_ATTACK_ALREADY_CALCULATED: Страж промахнулся.'});s.multiplayer.messages=Array.from({length:4},(_,i)=>({id:'p'+i,role:'user',name:'PLAYER_'+i,content:'Игрок '+i+' просит напомнить CODE_'+i+'731. '+('Туман окутывает площадь. '.repeat(220))}));f.save(s);await f.room.generate();
   const prompt=f.calls.at(-1).messages,contract=prompt.find(m=>m.content.startsWith('[SAS_GM_ROUND_CONTRACT]')),requests=prompt.find(m=>m.content.startsWith('[SAS_CURRENT_PLAYER_REQUESTS]'));
@@ -318,4 +387,42 @@ test('Initiative alternates player and NPC segments without resetting the round;
 
 test('Interrupted NPC segment resumes its prose without repeating NPC actions or skipping the next player',async t=>{
  let reply=0;const f=await fixture(t,()=>++reply===1?{text:'Страж начал ',eof:true}:{text:'и завершил ход.',reason:'stop'},{npc:true});const s=f.state,g=s.multiplayer.tactical;g.actors.find(a=>a.id==='npc').abilities.dexterity=14;g.actors.find(a=>a.id==='host').abilities.dexterity=8;beginInitiative(g);f.save(s);assert.equal(g.phase,'gm');await assert.rejects(f.room.generate());assert.equal(f.state.multiplayer.tactical.turn,1);assert.equal(f.state.multiplayer.tactical.round,1);const pending=f.room.status().room.narration;assert.equal(pending.canContinue,true);await f.room.generate({continueMessageId:pending.messageId});assert.equal(f.calls.filter(c=>c.messages[0].content.includes('You control only this NPC')).length,1);assert.equal(f.state.multiplayer.tactical.phase,'players');assert.equal(f.state.multiplayer.tactical.order[f.state.multiplayer.tactical.turn],'host');assert.equal(f.state.multiplayer.tactical.round,1);
+});
+
+test('D&D resumes an interrupted reply from a portable host backup after reassigning the room and rulebook IDs',async t=>{
+ let streamed=0;
+ const f=await fixture(t,()=>++streamed===1?{text:'Страж открыл дверь и ',eof:true}:{text:'указал на ступени.',reason:'stop'});
+ const prepared=f.state;
+ prepared.lorebooks=[{id:'shared-map-rules',name:'Правила прохода',entries:[{id:'stairs',content:'Служебная лестница ведёт в архив.',constant:true}]}];
+ prepared.multiplayer.rulebookIds=['shared-map-rules'];
+ prepared.multiplayer.tactical.actors[0].slots=2;
+ prepared.multiplayer.messages.unshift({id:'old-scene-image',role:'assistant',kind:'image',content:'Вид старой площади',imageId:'old-image'});
+ f.save(prepared);
+ await assert.rejects(f.room.generate());
+ const pending=f.room.status().room.narration;
+ assert.equal(pending.canContinue,true);
+ const original=f.state.multiplayer;
+ const backup=JSON.parse(JSON.stringify(await f.room.backup()));
+ await f.room.stop();
+
+ const changed=structuredClone(backup);
+ changed.lorebooks[0].entries[0].content='Служебная лестница разрушена.';
+ await f.room.restoreBackup(changed);
+ assert.equal(f.room.status().room.narration.canContinue,false,'A changed source cannot inherit the old revision');
+
+ await f.room.restoreBackup(backup);
+ const restored=f.state.multiplayer;
+ assert.notEqual(restored.id,original.id);
+ assert.notEqual(restored.rulebookIds[0],original.rulebookIds[0]);
+ assert.equal(restored.messages.find(m=>m.id==='old-scene-image').kind,'image-unavailable');
+ assert.ok(!roomChat(restored).messages.some(m=>m.id==='old-scene-image'),'An unavailable image is not a narrative source');
+ assert.equal(f.room.status().room.narration.canContinue,true);
+ await f.room.start({port:0,personaId:persona.id,lobby:false});
+ assert.equal(f.room.status().room.narration.canContinue,true);
+ const done=await f.room.generate({continueMessageId:pending.messageId});
+ assert.equal(done.message.content,'Страж открыл дверь и указал на ступени.');
+ assert.equal(done.message.id,pending.messageId);
+ assert.equal(f.state.multiplayer.tactical.round,original.tactical.round+1);
+ assert.equal(f.state.multiplayer.tactical.actors[0].slots,2);
+ assert.equal(streamed,2);
 });

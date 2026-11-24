@@ -1,3 +1,4 @@
+import {speakerView} from '../shared/bigroom.mjs';
 import crypto from 'node:crypto';
 import {createMemory,memoryDue,validMemory,pendingMemory} from './memory.mjs';
 import {complete,getConnection} from './llm.mjs';
@@ -5,17 +6,40 @@ import {cosine} from './embeddings.mjs';
 import {roomEmbeddingState} from './room-models.mjs';
 import {gamePersonaName,gameIdentityProjector,isGameRoom} from './room-identities.mjs';
 import {createGameRag,gameMemoryPolicy} from './game-rag.mjs';
+import {recallChatArchive} from './chat-archive.mjs';
 
-export const roomMemoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,memoryMode:'hybrid',memoryBudget:1000,historyLimit:40,loreBudget:1000};
+export const roomMemoryDefaults={autoSummary:true,summaryInterval:15,vectorMemory:false,archiveMemory:false,archiveMemoryVersion:1,memoryMode:'hybrid',memoryBudget:1000,historyLimit:40,loreBudget:1000};
 export function roomChat(room,base={}){
   if(isGameRoom(room))return gameRoomChat(room,base);
   const engine=(room.tactical?.eventArchive||[]).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
   const messages=[...(room.messages||[]).filter(m=>m.kind!=='image'&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>({...m,content:m.role==='user'?`${m.name||'Игрок'} (${m.personaName||m.name||'Игрок'}): ${m.content}`:m.content})),...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
-  return {...base,id:'room-'+room.id,summary:room.summary||'',memory:room.memory||[],memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages};
+  const viewed=room.mode==='bigroom'&&base.characterId?speakerView(messages,base.characterId):messages;
+  // Summaries belong to the canonical room history. Project their source hashes
+  // and ranges along with the speaker's view, so a speaker change retains valid
+  // memory while edits to the original source still invalidate it.
+  const originalById=new Map(messages.map(message=>[message.id,message]));
+  const viewedById=new Map(viewed.map(message=>[message.id,message]));
+  const memory=viewed===messages?room.memory||[]:(room.memory||[]).map(block=>({...block,...(block.sources?{sources:block.sources.map(source=>{
+    const original=originalById.get(source.id),projected=viewedById.get(source.id);
+    if(!original||!projected||source.hash!==fingerprint(original.role+'\n'+original.content))return source;
+    const prefix=projected.content.length-original.content.length;
+    return {...source,hash:fingerprint(projected.role+'\n'+projected.content),start:source.start===0?0:source.start+prefix,end:source.end+prefix};
+  })}:{})}));
+  let archiveView=viewed;
+  if(room.memorySettings?.archiveMemoryVersion===2){
+    const originalPosts=new Map((room.messages||[]).map(message=>[message.id,message]));
+    archiveView=viewed.map(message=>{
+      const original=originalPosts.get(message.id);
+      // Speaker projection changes the role used for generation, but an NPC's
+      // historical post remains an NPC source in the shared room archive.
+      return original?{...message,archiveRole:original.role,archiveContent:original.content}:message;
+    });
+  }
+  return {...base,id:'room-'+room.id,summary:room.summary||'',memory,memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages:archiveView};
 }
 function gameRoomChat(room,base){
  const migrated=new Map(),project=gameIdentityProjector(room);
- const messages=(room.messages||[]).filter(m=>m.kind!=='image'&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>{
+ const messages=(room.messages||[]).filter(m=>!['image','image-unavailable'].includes(m.kind)&&!m.interrupted&&m.continuationStatus!=='incomplete').map(m=>{
   if(m.role!=='user'){
    const renamed=project.source(m.content);
    migrated.set(m.id,{oldHash:fingerprint(m.role+'\n'+m.content),hash:fingerprint(m.role+'\n'+renamed.content),offset:renamed.offset});
@@ -32,7 +56,9 @@ function gameRoomChat(room,base){
  })}:{})}));
  const engine=(room.tactical?.eventArchive||[]).filter(e=>!['initiative','initiative-tie','challenge','check-difficulty'].includes(e.calculation?.kind)).map(e=>({id:'engine-'+e.id,role:'user',kind:'engine',name:'Движок',round:e.round,content:'Подтверждённый результат движка: '+e.text,createdAt:e.at}));
  const scene=room.scene||base.scene||{},names=value=>value.filter(v=>typeof v==='string').map(project);
- const gameScene={currentLocation:project(scene.currentLocation??scene.location??''),presentNPCs:Array.isArray(scene.presentNPCs)?names(scene.presentNPCs):(room.tactical?.actors||[]).filter(a=>!a.player&&a.hp>0&&a.online!==false).map(a=>a.name),activeQuests:Array.isArray(scene.activeQuests)?names(scene.activeQuests):room.storybook?.goal?[project(room.storybook.goal)]:[]};
+ const questTitles=(Array.isArray(room.campaign?.quests)?room.campaign.quests:[]).filter(quest=>quest?.status==='active').slice(-3).map(quest=>quest.title);
+ const sceneQuests=Array.isArray(scene.activeQuests)?scene.activeQuests:[room.storybook?.goal];
+ const gameScene={currentLocation:project(scene.currentLocation??scene.location??''),presentNPCs:Array.isArray(scene.presentNPCs)?names(scene.presentNPCs):(room.tactical?.actors||[]).filter(a=>!a.player&&a.hp>0&&a.online!==false).map(a=>a.name),activeQuests:[...new Set(names([...questTitles,...sceneQuests]))]};
  return {...base,id:'room-'+room.id,mode:room.mode,memoryScope:room.mode,roomId:room.id,gameRound:room.tactical?.round,scene,gameScene,lorebookIds:[...(room.lorebookIds||base.lorebookIds||[])],summary:project(room.summary),memory,memorySettings:{...roomMemoryDefaults,...room.memorySettings,embeddingConnectionId:room.aiSettings?.embeddingConnectionId||'',embeddingModel:room.aiSettings?.embeddingModel||''},messages:[...messages,...engine].sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))};
 }
 export function roundMessages(chat){
@@ -115,9 +141,11 @@ export function createRoomMemory({getState,saveState,getSecret,embeddings,comple
     if(isGameRoom(room)){const chat=roomChat(room),policy=gameMemoryPolicy(chat);if(chat.memorySettings.autoSummary&&policy.memory&&policy.automatic&&new Set(gamePending(chat).map(p=>p.id)).size>=Math.max(2,Number(chat.memorySettings.summaryInterval)||15))return summarizeGame(id,options);return;}
     if(memoryDue(roomChat(room)))return summarize(id,options);
   }
-  async function recall(state,chat,signal){
+  async function recall(state,chat,signal,options){
     state=roomEmbeddingState(state,chat);
-    if(isGameRoom(chat))return gameRag.recall(state,chat,signal);
+    if(isGameRoom(chat))return gameRag.recall(state,chat,signal,options);
+    const staged=await recallChatArchive(state,chat,'',signal,embeddings);
+    if(staged)return staged;
     const warnings=[],report={sources:[],memoryIds:[],vectorStatus:chat.memorySettings.vectorMemory?'ready':'disabled'};
     let retrieval={};
     try{retrieval=await embeddings?.retrieve(state,chat,'',signal)||{};}catch(error){signal?.throwIfAborted();warnings.push('Векторный поиск: '+error.message);report.vectorStatus='fallback';}

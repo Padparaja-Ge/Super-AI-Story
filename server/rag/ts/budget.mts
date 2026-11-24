@@ -10,7 +10,10 @@ const integer = (value: number | undefined, fallback: number, min: number, max: 
 export function formatRagChunk(chunk: Chunk): string {
   return JSON.stringify({id:chunk.id,source: chunk.metadata.source, type: chunk.metadata.type,
     ...(chunk.metadata.name ? {name: chunk.metadata.name} : {}),
-    ...(chunk.metadata.kind ? {kind: chunk.metadata.kind} : {}), content: chunk.content});
+    ...(chunk.metadata.kind ? {kind: chunk.metadata.kind} : {}),
+    ...(chunk.metadata.evidenceStatus ? {status:chunk.metadata.evidenceStatus,turn:chunk.metadata.index===undefined?undefined:chunk.metadata.index+1,
+      messageId:chunk.metadata.messageId,conflict:chunk.metadata.evidenceConflict===true} : {}),
+    content: chunk.content});
 }
 export function formatRag(chunks: readonly Chunk[]): string {
   return chunks.length ? '[SAS_RAG_SOURCES]\n' + chunks.map(formatRagChunk).join('\n') : '';

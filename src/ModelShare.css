@@ -1,0 +1,30 @@
+.model-share {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.model-share-panel { min-width: 0; }
+.model-share-heading { flex-wrap: wrap; }
+.model-share-heading h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.model-share-panel > .field { margin-top: 14px; }
+.model-share-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.model-share-actions .btn {
+  max-width: 100%;
+  white-space: normal;
+}
+.model-share-actions svg, .model-share-heading svg { flex-shrink: 0; }
+.model-share-status {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+}
+.model-share-status dt { color: var(--muted); }
+.model-share-status dd { margin: 0; }

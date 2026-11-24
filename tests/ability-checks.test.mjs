@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultAbilities,abilities} from '../shared/srp.mjs';
+import {visualRollFromEvent} from '../shared/dice-visual.mjs';
 import {createAdventureGame,adventureActor,adventureAction,prepareActor,resetRound} from '../server/adventure-engine.mjs';
 import {upsertChallenge,setActorCheckDifficulty,resolveD20Outcome,checkContext,validateDieResult} from '../server/ability-checks.mjs';
 
@@ -141,4 +142,43 @@ test('Challenge archive stays bounded and an explicit new action resets only the
  for(let i=0;i<300;i++)upsertChallenge(game,{id:'closed-'+i,name:'Закрытое '+i,actorId:'hero',ability:'strength',dc:10,active:false});
  const live=upsertChallenge(game,{id:'live',name:'Текущая',actorId:'hero',ability:'strength',dc:10});assert.equal(game.challengeArchive.length,2000);assert.equal(game.challengeArchive.at(-1).id,'closed-0');assert.equal(game.challenges.length,300);
  check(game,{challengeId:live.id},7);const oldActionId=live.actionId;upsertChallenge(game,{id:live.id,actionId:'explicit-next-attempt'});assert.notEqual(live.actionId,oldActionId);assert.equal(live.lastResultId,undefined);assert.equal(live.results.hero.calculation.roll,7);assert.equal(check(game,{challengeId:live.id},15).calculation.success,true);
+});
+
+test('D&D cannot flank through a closed corner, and a protected target suppresses a restored critical attack animation',()=>{
+ let game=table();
+ const [hero,target]=game.actors;
+ Object.assign(hero,{x:1,y:2});Object.assign(target,{x:2,y:2});
+ hero.abilities.dexterity=14;
+ game.actors.push(Object.assign(adventureActor('ally',{...persona,name:'Лира'},game.rules),{x:3,y:1}));
+ game.map={id:'closed-corner',width:5,height:5,tiles:Array(25).fill(0),doors:[{id:'side-door',x:3,y:2,open:false}]};
+ const attack=rolls=>{
+  const calls=[];
+  act(game,{action:'skill',skillId:'sword',targetId:target.id},sides=>{calls.push(sides);return rolls[calls.length-1];});
+  return {calls,event:game.log.findLast(e=>e.calculation?.kind==='attack')};
+ };
+ let roll=attack([2,20,4]);
+ assert.deepEqual(roll.calls,[20]);
+ assert.equal(roll.event.calculation.hit,false);
+ assert.deepEqual(visualRollFromEvent(roll.event).dice.map(d=>d.value),[2]);
+ assert.equal(target.hp,40);
+
+ resetRound(game,()=>10);
+ game.map.doors[0].open=true;
+ roll=attack([2,20,4]);
+ assert.deepEqual(roll.calls,[20,20,8]);
+ assert.equal(roll.event.calculation.hit,true);
+ assert.equal(visualRollFromEvent(roll.event).cinematic,'divine-blessing');
+ assert.equal(target.hp,36);
+
+ game=JSON.parse(JSON.stringify(game));
+ resetRound(game,()=>10);
+ const protectedTarget=game.actors.find(a=>a.id===target.id);
+ setActorCheckDifficulty(protectedTarget,'attack',{dc:12,impossible:true,impossibleReason:'Призрак неуязвим для обычного меча.'});
+ const damageCount=game.log.filter(e=>e.calculation?.kind==='damage').length;
+ roll=attack([2,20]);
+ assert.deepEqual(roll.calls,[20,20]);
+ assert.equal(protectedTarget.hp,36);
+ assert.equal(game.log.filter(e=>e.calculation?.kind==='damage').length,damageCount);
+ const visual=visualRollFromEvent(roll.event);
+ assert.equal(visual.outcome,'impossible');assert.equal(visual.cinematic,null);assert.equal(visual.dice.find(d=>d.kept).value,20);
 });

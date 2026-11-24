@@ -126,3 +126,15 @@ test('invalid copy completion never edits the source and has no unbounded recove
  let calls=0;const tail='"Я знал, что вер';
  await assert.rejects(finishFanficScene(options({tail,structured:async args=>{calls++;return args.name==='fanfic_scene_ending'?args.parse({ending:'нуться.'}):args.parse({completedText:'"Мы начали новую историю."'});}})),/изменила исходный фрагмент/);assert.equal(calls,2);
 });
+
+test('A short fanfic scene only truncates at a sentence boundary outside open dialogue',async()=>{
+ const {boundedFanficProse,fanficProseLimit}=await import('../server/fanfic-prose.mjs');
+ const limit=fanficProseLimit('Два предложения.');
+ assert.deepEqual(fanficProseLimit('Write a single short paragraph.'),{paragraph:true,min:0,max:0});
+ const open='Люси повернулась к Дэвиду. "Сандевистан опасен.';
+ assert.equal(boundedFanficProse(open,limit,true),null);
+ const complete=open+' После второго рывка задрожат руки."';
+ assert.equal(boundedFanficProse(complete+' Дэвид кивнул.',limit,false),complete);
+ const nested='Она встала. «Он сказал “жди”. Я осталась.»';
+ assert.equal(boundedFanficProse(nested+' Потом она вышла.',limit,false),nested);
+});

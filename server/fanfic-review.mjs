@@ -71,6 +71,14 @@ export function fanficReviewReferences({project,episode,context={}}){
   const memory=memories.get(selected.id);if(!memory){warnings.push('Сводка вне принятой хронологии исключена.');continue;}
   add({id:'memory:'+memory.id,kind:'accepted-summary',episodeId:memory.episodeId,title:memory.title,summary:memory.summary,location:memory.location,relationships:memory.relationships,openThreads:memory.openThreads},selected.retrievalScore??(selected.recent?.5:0));
  }
+ const acceptedEpisodeIds=new Set(accepted.map(memory=>memory.episodeId));
+ for(const selected of context.archive||[]){
+  const source=(project.episodes||[]).find(item=>item.id===selected.episodeId&&acceptedEpisodeIds.has(item.id));
+  if(!source||!Number.isInteger(selected.start)||!Number.isInteger(selected.end)||selected.start<0||selected.end<=selected.start||selected.end-selected.start>650)continue;
+  const excerpt=source.content.slice(selected.start,selected.end);
+  if(excerpt!==selected.excerpt)continue;
+  add({id:'archive:'+selected.id,kind:'approved-prose',episodeId:source.id,title:fanficEpisodeLabel(source),text:excerpt},selected.retrievalScore);
+ }
  if(project.canon?.trim())add({id:'project-canon',kind:'author-canon',text:clip(project.canon,1400)},.25);
  for(const card of [...(project.characters||[]),...(project.personas||[])].slice(0,20))add({id:'cast:'+card.id,kind:'card',name:card.name,description:clip(card.description,300),appearance:clip(card.appearance,300)},0);
  const availableLore=new Map();

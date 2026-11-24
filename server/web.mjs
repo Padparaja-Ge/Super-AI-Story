@@ -97,6 +97,7 @@ export async function startWebServer({port,host,dataDir=defaultDataDir,mode='ful
   network.routes(app,{apply,getRuntime:runtimeInfo,desktop,onApplied:(_req,res)=>{passwordOverride=undefined;syncPassword();if(password){const stamp=String(Date.now()+12*3600000);res.setHeader('Set-Cookie',`sas_session=${stamp}.${sign(stamp)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);}else res.setHeader('Set-Cookie','sas_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');}});
   app.use('/api',async(req,res)=>{
     if(req.path.startsWith('/internal/'))return res.sendStatus(404);
+    if(req.path.toLowerCase().startsWith('/model-share/')&&!loopback(String(req.socket.remoteAddress||'').replace(/^::ffff:/,'')))return res.status(403).json({error:'Управление общей генерацией доступно на компьютере, где запущен SAS.'});
     try{
       const origin=await ensure();if(leaseOrigin!==origin){leaseOrigin=origin;await lease(origin);}const target=new URL(req.originalUrl,origin);
       const proxyHeaders={...req.headers,host:target.host,'x-sas-client':'web'};

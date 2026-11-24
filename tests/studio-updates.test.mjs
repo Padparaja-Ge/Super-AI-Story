@@ -7,7 +7,7 @@ import http from 'node:http';
 import {createNetworkPolicy,networkDefaults,isAddressAllowed,validateNetwork} from '../server/network.mjs';
 import {startServer} from '../server/index.mjs';
 import {startWebServer} from '../server/web.mjs';
-import {parseDevices,recommendedDevice,runtimeArgs} from '../server/local-runtime.mjs';
+import {parseDevices,recommendedDevice,runtimeArgs,localPromptFormat} from '../server/local-runtime.mjs';
 
 async function temp(t,cleanup=async()=>{}){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sas-update-'));t.after(async()=>{assert.ok(path.resolve(dir).startsWith(path.join(os.tmpdir(),'sas-update-')));await cleanup();await fs.rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:50});});return dir;}
 const request=(port,route,body,method)=>fetch(`http://127.0.0.1:${port}/api${route}`,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json','X-SAS-Client':'test'},...(body!==undefined?{body:JSON.stringify(body)}:{})});
@@ -70,6 +70,18 @@ test('Importing a model folder collects GGUF files and skips later split shards'
   for(const name of ['one.gguf','two-00001-of-00002.gguf','two-00002-of-00002.gguf'])await fs.writeFile(path.join(models,name),Buffer.from('GGUF0000'));
   await fs.writeFile(path.join(models,'notes.txt'),'not a model');
   const response=await request(runtime.port,'/local/import',{path:models});assert.equal(response.status,200);const result=await response.json();assert.equal(result.added.length,2);assert.equal(result.models.length,2);
+});
+test('Local prompt format merges system blocks for templates that reject a later system message',()=>{
+  const qwen35="{%- if message.role == 'system' %}{%- if not loop.first %}{{- raise_exception('System message must be at the beginning.') }}{%- endif %}{%- endif %}<|im_start|>";
+  assert.equal(localPromptFormat(qwen35),'single-system');assert.equal(localPromptFormat(qwen35,'gguf'),'single-system');assert.equal(localPromptFormat(qwen35,'chatml'),'');
+  assert.equal(localPromptFormat('[INST] {{ system }}'),'single-system');assert.equal(localPromptFormat('### Instruction: x ### Response:'),'alpaca');
+  assert.equal(localPromptFormat('<|im_start|>system'),'');assert.equal(localPromptFormat(''),'');assert.equal(localPromptFormat('',"mistral-v7"),'single-system');
+});
+test('Model list hides vision projectors and later split shards in the download folder',async t=>{
+  let runtime;const dir=await temp(t,()=>runtime?.close()),data=path.join(dir,'data'),repo=path.join(data,'models','owner','repo');await fs.mkdir(repo,{recursive:true});
+  for(const name of ['one.gguf','mmproj-one-BF16.gguf','one.mmproj.gguf','mmprojection-model.gguf','two-00001-of-00002.gguf','two-00002-of-00002.gguf'])await fs.writeFile(path.join(repo,name),Buffer.from('GGUF0000'));
+  runtime=await startServer({port:0,dataDir:data});const response=await request(runtime.port,'/local/models');assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).models.map(m=>m.name).sort(),['owner/repo/mmprojection-model.gguf','owner/repo/one.gguf','owner/repo/two-00001-of-00002.gguf']);
 });
 test('Device discovery prefers actual CUDA over integrated shared memory; AMD uses Vulkan and CPU remains selectable',()=>{
   const gpu=parseDevices('  CUDA0: NVIDIA GeForce RTX 4060 (8192 MiB, 7600 MiB free)','cuda');

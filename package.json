@@ -1,6 +1,6 @@
 {
   "name": "super-ai-story",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "private": true,
   "type": "module",
   "description": "SAS — локальная студия персонажей, миров и LLM",
@@ -26,6 +26,7 @@
     "prepare:runtime": "node scripts/prepare-runtime.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@fontsource-variable/manrope": "^5.3.0",
     "adm-zip": "^0.6.1",
     "espeak-ng": "^1.0.2",
@@ -36,11 +37,13 @@
     "onnxruntime-node": "^1.30.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "three": "^0.181.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.181.0",
     "@vitejs/plugin-react": "^4.4.0",
     "archiver": "7.0.1",
     "electron": "^36.0.0",

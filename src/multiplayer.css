@@ -115,3 +115,36 @@
 .calculation-entry p{margin:8px 0 0;line-height:1.6;white-space:pre-wrap;font-variant-numeric:tabular-nums}
 .calculation-damage{border-top:1px solid var(--border);padding-top:8px}.calculation-hit{color:#7ec69b}.calculation-miss{color:var(--muted)}
 @media(max-width:520px){.room-panel-navigation>button{padding:10px 5px;min-width:0}.room-panel-navigation>button>svg{display:none}.calculation-journal .form-grid{grid-template-columns:1fr}.calculation-entry{padding:10px}}
+
+/* Big room (several AI characters in one scene) */
+.bigroom-setup h3,.bigroom-panel h3{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.bigroom-cast-picker{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:6px 14px}
+.bigroom-cast-picker legend{padding:0 6px;font-weight:650}
+.bigroom-cast-picker>p{grid-column:1/-1;margin:4px 0 0}
+.bigroom-avatar{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--surface-2);overflow:hidden;flex:none;font-size:15px}
+.bigroom-avatar img{width:100%;height:100%;object-fit:cover}
+.bigroom-panel{margin:12px 0}
+.bigroom-panel>header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.bigroom-cast{list-style:none;margin:8px 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:8px}
+.bigroom-sub{display:block;font-size:calc(12px * var(--font-scale,1));line-height:1.35}
+.bigroom-cast li{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.bigroom-cast li>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+.bigroom-cast li.speaking{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.bigroom-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.bigroom-converse{display:inline-flex;gap:6px;align-items:center}
+.bigroom-converse select{width:auto}
+@media (max-width:640px){.bigroom-cast{grid-template-columns:1fr}}
+
+.bigroom-cast-option {
+ min-width: 0;
+ min-height: 48px;
+ margin: 0;
+ padding: 8px 4px;
+ gap: 10px;
+}
+.bigroom-cast-option > input[type=checkbox] { flex: 0 0 17px; }
+.bigroom-identity { display: grid; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.bigroom-identity small { font-size: calc(11px * var(--font-scale,1)); }
+.bigroom-converse { max-width: 100%; flex-wrap: wrap; }
+.bigroom-cast li > .btn { flex: 0 0 auto; }
+.bigroom-panel .badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

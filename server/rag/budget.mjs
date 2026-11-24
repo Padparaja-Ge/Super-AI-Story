@@ -6,7 +6,10 @@ const integer = (value, fallback, min, max) => Math.max(min, Math.min(max, Math.
 export function formatRagChunk(chunk) {
     return JSON.stringify({ id: chunk.id, source: chunk.metadata.source, type: chunk.metadata.type,
         ...(chunk.metadata.name ? { name: chunk.metadata.name } : {}),
-        ...(chunk.metadata.kind ? { kind: chunk.metadata.kind } : {}), content: chunk.content });
+        ...(chunk.metadata.kind ? { kind: chunk.metadata.kind } : {}),
+        ...(chunk.metadata.evidenceStatus ? { status: chunk.metadata.evidenceStatus, turn: chunk.metadata.index === undefined ? undefined : chunk.metadata.index + 1,
+            messageId: chunk.metadata.messageId, conflict: chunk.metadata.evidenceConflict === true } : {}),
+        content: chunk.content });
 }
 export function formatRag(chunks) {
     return chunks.length ? '[SAS_RAG_SOURCES]\n' + chunks.map(formatRagChunk).join('\n') : '';

@@ -17,7 +17,7 @@ export function roleplayWordLimit(maxTokens,text=''){
 }
 export function roleplayMessages(messages,{characterName='Персонаж',playerName='Игрок',maxTokens=600,sourceExcerpts=[],archive=[]}={}){
  const lastUser=messages.findLastIndex(m=>m.role==='user');
- const originals=sourceExcerpts.length?sourceExcerpts.map(e=>{const m=archive.find(v=>v.id===e.messageId),speaker=m?.role==='assistant'?characterName:m?.role==='user'?playerName:'Архив';return `[Ход ${e.index+1}; ${speaker}]: ${e.text}`;}).join('\n\n'):messages.filter(m=>m.role==='system'&&m.content.startsWith('Исходные события ЭТОЙ истории')).map(m=>m.content).join('\n\n');
+ const originals=sourceExcerpts.length?sourceExcerpts.map(e=>{if(e.evidenceStatus)return JSON.stringify({messageId:e.messageId,turn:e.index+1,status:e.evidenceStatus,conflict:e.evidenceConflict===true,quote:e.text});const m=archive.find(v=>v.id===e.messageId),speaker=m?.role==='assistant'?characterName:m?.role==='user'?playerName:'Архив';return `[Ход ${e.index+1}; ${speaker}]: ${e.text}`;}).join('\n\n'):messages.filter(m=>m.role==='system'&&m.content.startsWith('Исходные события ЭТОЙ истории')).map(m=>m.content).join('\n\n');
  const instructions=messages.filter(m=>m.role==='system'&&!m.content.startsWith('Исходные события ЭТОЙ истории')).map(m=>m.content).join('\n\n');
  const history=messages.filter((m,i)=>m.role!=='system'&&i!==lastUser).map(m=>(m.role==='assistant'?characterName:playerName)+': '+uniqueSentences(m.content)).join('\n\n');
  const latest=lastUser>=0?uniqueSentences(messages[lastUser].content):'Продолжи сцену за персонажа, не решая за игрока.';

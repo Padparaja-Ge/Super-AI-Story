@@ -1,14 +1,16 @@
 import express from 'express';
 import { createHash, randomUUID } from 'node:crypto';
+import {archiveEvidenceInstruction} from './archive-evidence.mjs';
 import { fanficDefaults, fanficEpisodeOrder, fanficEpisodeLabel } from '../shared/fanfic.mjs';
 import { getConnection, streamCompletion, countCompletionTokens } from './llm.mjs';
 import { structuredCompletion, parseObject } from './services/structuredCompletion.js';
 import { messageTokens } from './prompt.mjs';
-import {selectFanficLore,fanficCast,resolveFanficContext,packReference} from './fanfic-context.mjs';
+import {localizeFanficLorebooks,isFanficStarterLorebook} from '../shared/fanfic-lore-localization.mjs';
+import {selectFanficLore,rankFanficCast,resolveFanficContext,packReference,packFanficEditorReferences} from './fanfic-context.mjs';
 import {measureFanficWordBudget,fanficSceneWordLimit} from './fanfic-word-budget.mjs';
 import {createTextContinuationJoiner} from './text-continuation.mjs';
 import {finishFanficScene} from './fanfic-scene-ending.mjs';
-import {cleanFanficProse,fanficStops} from './fanfic-prose.mjs';
+import {boundedFanficProse,cleanFanficProse,completeFanficProse,createFanficProseJoiner,fanficProseLimit,fanficStops} from './fanfic-prose.mjs';
 import {fanficFactSchema,fanficFactInstructions} from '../shared/fanfic-canon.mjs';
 import {validateCanonExtraction,validateCanonManualFacts,eligibleCanonFacts,canonFactReference,fanficEvidenceBlocks} from './fanfic-canon.mjs';
 import {normalizeFanficProfiles,resolveFanficStageProfile} from '../shared/fanfic-profiles.mjs';
@@ -35,10 +37,13 @@ export const fanficMemorySchema = objectShape({ summary: stringShape, location: 
 function settingsOf(value = {}) {
   const settings = { ...fanficDefaults };
   for (const key of ['connectionId', 'style', 'perspective', 'tense', 'genre', 'audience', 'instructions']) settings[key] = text(value[key] ?? settings[key], key === 'instructions' ? 4000 : key === 'style' ? 2000 : 300);
+  settings.writingLanguage = ['ru','en'].includes(value.writingLanguage) ? value.writingLanguage : 'auto';
   settings.sceneCount = Math.round(bounded(value.sceneCount, 3, 1, 8));
   settings.maxTokens = Math.round(bounded(value.maxTokens, 1200, 256, 4096));
   settings.temperature = bounded(value.temperature, 0.8, 0, 1.5);
   settings.vectorMemory = value.vectorMemory === true;
+  settings.archiveMemory = value.archiveMemory === true;
+  settings.archiveMemoryVersion = value.archiveMemoryVersion === 2 ? 2 : 1;
   settings.memoryTopK = Math.round(bounded(value.memoryTopK, 8, 1, 30));
   settings.memoryThreshold = bounded(value.memoryThreshold, .3, 0, 1);
   settings.memoryRecentEpisodes = Math.round(bounded(value.memoryRecentEpisodes, 2, 1, 10));
@@ -50,13 +55,15 @@ function settingsOf(value = {}) {
 function snapshotCard(card = {}) {
   const result = { id: text(card.id, 100) || randomUUID(), sourceId: text(card.sourceId || card.id, 100) };
   for (const key of ['name', 'subtitle', 'description', 'personality', 'appearance', 'scenario', 'firstMessage', 'exampleDialogue', 'systemPrompt', 'postHistoryInstructions', 'avatar', 'color']) result[key] = text(card[key], key === 'avatar' ? 500000 : 8000);
+  if(Array.isArray(card.aliases))result.aliases=[...new Set(card.aliases.slice(0,12).map(alias=>text(alias,100)).filter(Boolean))];
   result.blocks = (Array.isArray(card.blocks) ? card.blocks : []).slice(0, 30).filter(b => b && b.enabled !== false).map(b => ({ name: text(b.name, 120), content: text(b.content), enabled: true }));
   return result;
 }
 
 function snapshotLore(book = {}) {
   return { id: text(book.id, 100) || randomUUID(), sourceId: text(book.sourceId || book.id, 100), name: text(book.name, 200), description: text(book.description),
-    entries: (Array.isArray(book.entries) ? book.entries : []).slice(0, 300).filter(e => e && typeof e === 'object').map(e => ({ id: text(e.id, 100) || randomUUID(), name: text(e.name, 200), content: text(e.content), keys: (Array.isArray(e.keys) ? e.keys : []).slice(0, 30).map(k => text(k, 120)), secondaryKeys: (Array.isArray(e.secondaryKeys) ? e.secondaryKeys : []).slice(0,30).map(k=>text(k,120)), selective:e.selective===true, caseSensitive:e.caseSensitive===true, enabled: e.enabled !== false, constant: e.constant === true, vectorized: e.vectorized === true, priority: bounded(e.priority, 0, -100, 100) })) };
+    ...(isFanficStarterLorebook(book.id)?{language:book.language==='en'?'en':'ru'}:{}),
+    entries: (Array.isArray(book.entries) ? book.entries : []).slice(0, 300).filter(e => e && typeof e === 'object').map(e => ({ id: text(e.id, 100) || randomUUID(), name: text(e.name, 200), content: text(e.content), keys: (Array.isArray(e.keys) ? e.keys : []).slice(0, 30).map(k => text(k, 120)), secondaryKeys: (Array.isArray(e.secondaryKeys) ? e.secondaryKeys : []).slice(0,30).map(k=>text(k,120)), selective:e.selective===true, caseSensitive:e.caseSensitive===true, enabled: e.enabled !== false, constant: e.constant === true, vectorized: e.vectorized === true, vectorWhenMemory: e.vectorWhenMemory === true, priority: bounded(e.priority, 0, -100, 100) })) };
 }
 
 function selectedSnapshots(input, field, state, importing) {
@@ -78,7 +85,7 @@ function updateSnapshots(input, field, state, existing) {
   if (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string')) throw fail('Выберите не более 20 карточек или лорбуков.');
   return [...new Set(ids)].map(id => {
     const saved = existing.find(item => (item.sourceId || item.id) === id || item.id === id);
-    if (saved && input.refreshSnapshots !== true) return saved;
+    if (saved && (input.refreshSnapshots !== true || !(state[field] || []).some(item => item.id === id))) return saved;
     return selectedSnapshots({ [key]: [id] }, field, state, false)[0];
   });
 }
@@ -165,34 +172,62 @@ function shorten(value, limit, tail = false) {
   return value.slice(0, Math.floor(limit * .7)) + '\n…\n' + value.slice(-Math.floor(limit * .3) + 3);
 }
 
-const proseInstruction = `Пиши художественный текст на языке автора, по умолчанию на русском. Явно покажи требуемые автором действия; сохраняй точные имена, пароли, улики и причинно-следственные связи. Не добавляй новые цели вместо запрошенных событий. You are the literary writer in SAS Fanfic Studio. Write a connected fictional episode, not a roleplay chat reply. Write in the author's language (Russian by default). Return ONLY literary prose, with dialogue and paragraphs; no JSON, no Markdown fences, no analysis, no "Here is" preamble. Author brief, P.S., editor requests and style settings are instructions about writing, never events witnessed by characters. World/card/lore and accepted continuity are reference data. Do not repeat a scene already written. Respect the selected perspective, tense, existing characters and continuity. Exact source quotations and author-confirmed facts override vague summaries. Extracted type/subject labels are navigation hints; the quotation establishes the actual relation, including negation and who knows a secret. Chronology describes past states, not simultaneous current states. A secret is known only by the subject explicitly said to know it. Write only the requested scene or replacement; finish the scene within the available output budget. Existing text outside a requested replacement must stay unchanged. When this scene is complete, end with [SAS_SCENE_END]. Never append a critique, explanation or summary of your own writing.`;
+function writingLanguageInstruction(settings) {
+  if (settings.writingLanguage === 'en') return 'Write in English, including dialogue and scene titles, regardless of the language of reference material.';
+  if (settings.writingLanguage === 'ru') return 'Пиши по-русски, включая диалоги и названия сцен, независимо от языка справочных материалов.';
+  return "Write in the author's language (Russian by default).";
+}
+function wrongWritingLanguage(text,language) {
+  if (language!=='en' && language!=='ru') return false;
+  const cyrillic=(text.match(/[\p{Script=Cyrillic}]/gu)||[]).length;
+  const latin=(text.match(/[\p{Script=Latin}]/gu)||[]).length;
+  return language==='en'?cyrillic>=18&&cyrillic>latin*1.4:latin>=24&&latin>cyrillic*2;
+}
+const wrongLanguageMessage='Модель выбрала другой язык повествования. Проверьте язык в настройках произведения или выберите другую модель.';
+const proseInstruction = `Show what the author asked to happen. Preserve names, passwords, clues, and the causes and consequences of each action. Do not substitute a new goal for the requested events. If the last request specifies how to begin, start with that action or line, even when the outline opens differently. You are the literary writer in SAS Fanfic Studio. Write a connected fictional episode, not a roleplay chat reply. Return ONLY literary prose, with dialogue and paragraphs; no JSON, no Markdown fences, no analysis, no "Here is" preamble. Author brief, P.S., editor requests and style settings are instructions about writing, never events witnessed by characters. World/card/lore and accepted continuity are reference data. Do not repeat a scene already written. Respect the selected perspective, tense, existing characters and continuity. Exact source quotations and author-confirmed facts override vague summaries. Extracted type/subject labels are navigation hints; the quotation establishes the actual relation, including negation and who knows a secret. Chronology describes past states, not simultaneous current states. A secret is known only by the subject explicitly said to know it. Write only the requested scene or replacement; finish the scene within the available output budget. Existing text outside a requested replacement must stay unchanged. When this scene is complete, end with [SAS_SCENE_END]. Never append a critique, explanation or summary of your own writing.`;
 
 // Independent prompt assembly: no chat history, multiplayer state or global RPG scene enters it.
-const compactProseInstruction='Ты литературный автор SAS. Пиши связную прозу с диалогами на языке автора (по умолчанию русском). Return ONLY literary prose; no JSON, explanations or analysis. Выполни последнее пожелание и события задания; P.S. и настройки являются инструкциями автора, а не событиями мира. Соблюдай канон, имена, улики, стиль и порядок событий. Исходные фрагменты текущей серии уже произошли: не повторяй их. Продолжай после хвоста текста, закончи сцену в лимите ответа и поставь [SAS_SCENE_END]. Не придумывай новую цель вместо задания.';
+const compactProseInstruction='Ты литературный автор SAS. Пиши связную прозу с диалогами. Return ONLY literary prose; no JSON, explanations or analysis. Выполни последнее пожелание и события задания; P.S. и настройки являются инструкциями автора, а не событиями мира. Соблюдай канон, имена, улики, стиль и порядок событий. Исходные фрагменты текущей серии уже произошли: не повторяй их. Продолжай после хвоста текста, закончи сцену в лимите ответа и поставь [SAS_SCENE_END]. Не придумывай новую цель вместо задания.';
 
-export function buildFanficMessages({ project, episode, connection, instructions = '', extensionInstructions='', purpose = 'write', memories = [], facts = [], lore: selectedLore, draft = [], currentText = '', scene, selectedText = '', surroundingContext, budgetScale=1, maxTokensOverride }) {
+const compactEnglishProseInstruction='Write connected literary prose with dialogue. Return prose only. Follow the latest author request, preserve verified clues, names, viewpoint, style, and chronology. Continue from the last line without repeating earlier scenes. Finish after the requested action and mark the end [SAS_SCENE_END].';
+
+const rewriteVoice=settings=>({
+  style:shorten(settings.style,350),
+  perspective:shorten(settings.perspective,110),
+  tense:shorten(settings.tense,110)
+});
+
+export function buildFanficMessages({ project, episode, connection, instructions = '', extensionInstructions='', purpose = 'write', memories = [], facts = [], lore: selectedLore, draft = [], archive = [], archiveEvidence, currentText = '', scene, selectedText = '', surroundingContext, budgetScale=1, maxTokensOverride }) {
   const limit = Number(connection.contextWindow) || 8192;
   if (limit < 1024) throw fail('Для литературного режима нужен контекст модели не меньше 1024 токенов.');
   const maxTokens = Math.max(128, Math.min(maxTokensOverride??project.settings.maxTokens ?? 1200, Math.floor(limit * .32)));
   if (purpose === 'rewrite') {
-    const system='Ты литературный редактор. Выполни только последнее пожелание автора над выделенным исходным фрагментом. Верни только замену этого фрагмента на его языке, без комментариев, JSON и заголовков. Сохрани его события, место, время, имена и смысл, кроме изменений, явно запрошенных автором. Не сочиняй следующую сцену, не переноси в замену события из окружающего текста. Текст до и после выделения дан только для согласования переходов и не должен повторяться. Если показана уже написанная часть замены, допиши её с места остановки, не повторяя начало.';
-    const data={request:shorten(instructions,2500),source:selectedText,before:shorten(surroundingContext?.before||'',650,true),after:shorten(surroundingContext?.after||'',650),replacementSoFar:shorten(currentText,1400,true),style:shorten(project.settings.style||'',350),reference:JSON.parse(packReference({cast:fanficCast(project),lore:selectedLore||selectFanficLore(project,selectedText+' '+instructions),continuity:memories.slice(-2),facts:facts.map(canonFactReference)},1500).text)};
+    const system='Ты литературный редактор. Выполни только последнее пожелание автора над выделенным исходным фрагментом. Верни только замену этого фрагмента на его языке, без комментариев, JSON и заголовков. Сохрани его события, место, время, имена и смысл, кроме изменений, явно запрошенных автором. Не сочиняй следующую сцену, не переноси в замену события из окружающего текста. Учитывай выбранные стиль, лицо и время, если последнее пожелание не требует их изменить. Текст до и после выделения дан только для согласования переходов и не должен повторяться. Если показана уже написанная часть замены, допиши её с места остановки, не повторяя начало.';
+    const reference=packFanficEditorReferences({cast:rankFanficCast(project,instructions,selectedText),lore:selectedLore||selectFanficLore(project,selectedText+' '+instructions,[],{focus:instructions||selectedText}),continuity:memories.slice(-2),facts:facts.map(canonFactReference),archive},Math.floor(1500*budgetScale));
+    const data={request:shorten(instructions,2500),source:selectedText,before:shorten(surroundingContext?.before||'',650,true),after:shorten(surroundingContext?.after||'',650),replacementSoFar:shorten(currentText,1400,true),voice:rewriteVoice(project.settings),reference};
     const messages=[{role:'system',content:system+(extensionInstructions?'\n'+extensionInstructions:'')},{role:'user',content:JSON.stringify(data)}];
-    for(const key of ['reference','before','after','style','replacementSoFar']) {
+    for(const key of ['reference','before','after','voice','replacementSoFar']) {
       if(messageTokens(messages)+maxTokens+100<=limit)break;
-      if(key==='reference')data.reference={};else data[key]=shorten(data[key],key==='replacementSoFar'?250:80,true);messages[1].content=JSON.stringify(data);
+      if(key==='reference')data.reference={};else if(key==='voice')data.voice={...data.voice,style:shorten(data.voice.style,80)};else data[key]=shorten(data[key],key==='replacementSoFar'?250:80,true);messages[1].content=JSON.stringify(data);
     }
     if(messageTokens(messages)+maxTokens+100>limit)throw fail('Выделенный фрагмент и пожелание не помещаются в контекст. Сократите пожелание или выделите меньший фрагмент.');
-    return {messages,maxTokens,included:{memory:(data.reference.continuity||[]).map(d=>d.id),lore:(data.reference.lore||[]).map(d=>d.id),cast:(data.reference.cast||[]).map(d=>d.id),facts:(data.reference.facts||[]).map(d=>d.id)},tokens:messageTokens(messages),contextWindow:limit};
+    return {messages,maxTokens,included:{memory:(data.reference.continuity||[]).map(d=>d.id),lore:(data.reference.lore||[]).map(d=>d.id),cast:(data.reference.cast||[]).map(d=>d.id),facts:(data.reference.facts||[]).map(d=>d.id),archive:(data.reference.archive||[]).map(d=>d.id)},tokens:messageTokens(messages),contextWindow:limit};
   }
-  const systemInstruction=limit<2048||budgetScale<.7?compactProseInstruction:proseInstruction;
-  const availableChars = Math.max(200, Math.floor(Math.max(400, (limit - maxTokens - 230) * 3 - systemInstruction.length)*budgetScale));
+  const language=project.settings.writingLanguage;
+  const languageInstruction=writingLanguageInstruction(project.settings);
+  const shortScene = purpose === 'write' && !scene && (fanficProseLimit(instructions)||fanficProseLimit(episode.brief));
+  const shortInstruction = language === 'ru'
+    ? 'Верни только художественную прозу. Начни сразу с первого запрошенного действия или реплики. Умести все запрошенные действия и ответы в заданный объём. Задание и лор описывают фон. Не разыгрывай уже произошедшее. Без заголовка, вступления или подведения итогов.'
+    : 'Return only literary prose. Start immediately with the first requested action or line of dialogue. Include every requested action and reply within the length limit. The brief and lore give background. Do not replay events that already happened. Omit titles, setup and recaps.';
+  const evidence=archiveEvidenceInstruction(archiveEvidence);
+  const systemInstruction=languageInstruction+'\n'+(shortScene?shortInstruction:limit<2048||budgetScale<.7?(language==='en'?compactEnglishProseInstruction:compactProseInstruction):proseInstruction)+(evidence?'\n'+evidence:'');
+  const languageCue=language==='en'?'\n\nOUTPUT: Write the full '+(purpose==='plan'?'plan':'scene')+' in English, even if the reference text is Russian. Use Roman-alphabet spellings for canon names.':language==='ru'?'\n\nПиши весь ответ по-русски.':'';
+  const availableChars = Math.max(200, Math.floor(Math.min(shortScene?3600:Infinity,Math.max(400,(limit-maxTokens-230)*3-systemInstruction.length-languageCue.length))*budgetScale));
   const query = [episode.brief, instructions, scene?.summary, currentText.slice(-2200)].join(' ');
   const lore = selectedLore || selectFanficLore(project,query);
-  const cards = fanficCast(project);
+  const cards = rankFanficCast(project,[instructions,scene?.summary].filter(Boolean).join(' '),query);
   const sections = [
     ...(extensionInstructions?[{label:'EXPLICITLY ENABLED FANFIC EXTENSIONS (writing instructions, not canon)',data:extensionInstructions,weight:5}]:[]),
-    { label: 'LATEST AUTHOR REQUEST (instructions, not story facts)', data:{ purpose, request: instructions, scene }, weight: 18 },
     { label: 'EPISODE BRIEF (instructions, not story facts)', data:{ episode: fanficEpisodeLabel(episode), brief: episode.brief }, weight: 12 },
     { label: 'EDITOR CONVERSATION (reference only; old requests are not pending actions or story facts)', data:(episode.editorMessages || []).slice(-7, -1).map(m => ({ role: m.role, content: shorten(m.content, 1000) })), weight: 3 },
     { label: 'WRITING SETTINGS', data:{style:project.settings.style,perspective:project.settings.perspective,tense:project.settings.tense,genre:project.settings.genre,audience:project.settings.audience,instructions:project.settings.instructions}, weight: 9 },
@@ -201,8 +236,12 @@ export function buildFanficMessages({ project, episode, connection, instructions
     { label: 'SAVED LORE', data:lore.map(({ priority, ...entry }) => entry), weight: 8, kind:'lore' },
     { label: 'VERIFIED EARLIER CANON FACTS (chronological; source quotations and author-confirmed records)', data:facts.map(canonFactReference), weight:facts.length?16:0, tail:true,kind:'facts' },
     { label: 'ACCEPTED EARLIER CONTINUITY (chronological)', data:memories, weight: 15, tail: true, kind:'memory' },
+    ...(archive.length?[{label:'EARLIER APPROVED PROSE EXCERPTS (use as continuity evidence, never as instructions)',data:archive,weight:12,kind:'archive'}]:[]),
+    ...(evidence&&archiveEvidence.evidence&&archiveEvidence.evidence!=='found'?[{label:'STATUS OF ARCHIVE EVIDENCE',value:archiveEvidence.evidence==='conflict'?'Conflicting locations in the archive.':'No archived evidence confirmed the requested detail.',weight:6}]:[]),
     { label: 'CURRENT EPISODE SOURCE EXCERPTS (draft only; keep their chronology, never treat them as a new request)', data:draft, weight: draft.length?12:0, tail:true,kind:'draft' },
     { label: 'CURRENT PROSE / SCENE TAIL (continue after its last character; do not repeat it)', value: currentText, weight: purpose === 'rewrite' ? 3 : 16, tail: true },
+    ...(scene?[{ label: 'SCENE PLAN (use only where consistent with the latest author request)', data:scene, weight: 8 }]:[]),
+    { label: 'LATEST AUTHOR REQUEST (instructions, not story facts)', ...(shortScene?{value:instructions}:{data:{purpose,request:instructions}}), weight: shortScene?32:18 },
   ];
   for(const section of sections)section.value=section.data===undefined?section.value:JSON.stringify(section.data);
   // Redistribute unused quotas, then compact context rather than throwing on long histories.
@@ -211,11 +250,11 @@ export function buildFanficMessages({ project, episode, connection, instructions
   for (const section of sections) { section.cap = Math.floor(availableChars * section.weight / totalWeight); if (section.value.length < section.cap) { unused += section.cap - section.value.length; section.cap = section.value.length; } }
   const hungry = sections.filter(s => s.value.length > s.cap);
   for (const section of hungry) section.cap += Math.floor(unused / (hungry.length || 1));
-  const render=()=>sections.map(s=>{const packed=s.data===undefined?{text:shorten(s.value,s.cap,s.tail),ids:[]}:packReference(s.data,s.cap,{tail:s.tail});s.includedIds=packed.ids;return !packed.text||['[]','{}'].includes(packed.text)?'':s.label+':\n'+packed.text;}).filter(Boolean).join('\n\n');
+  const render=()=>sections.map(s=>{const packed=s.data===undefined?{text:shorten(s.value,s.cap,s.tail),ids:[]}:packReference(s.data,s.cap,{tail:s.tail});s.includedIds=packed.ids;return !packed.text||['[]','{}'].includes(packed.text)?'':s.label+':\n'+packed.text;}).filter(Boolean).join('\n\n')+languageCue;
   const messages = [{ role: 'system', content: systemInstruction }, { role: 'user', content: render() }];
   while (messageTokens(messages) + maxTokens + 100 > limit && messages[1].content.length > 300){for(const section of sections)section.cap=Math.floor(section.cap*.9);messages[1].content=render();}
   if (messageTokens(messages) + maxTokens + 100 > limit) throw fail('Для литературного режима нужен контекст модели не меньше 1024 токенов.');
-  return { messages, maxTokens, included:{facts:sections.find(s=>s.kind==='facts').includedIds,memory:sections.find(s=>s.kind==='memory').includedIds,lore:sections.find(s=>s.kind==='lore').includedIds,cast:sections.find(s=>s.kind==='cast').includedIds,draft:sections.find(s=>s.kind==='draft').includedIds},tokens:messageTokens(messages),contextWindow:limit };
+  return { messages, maxTokens, included:{facts:sections.find(s=>s.kind==='facts').includedIds,memory:sections.find(s=>s.kind==='memory').includedIds,lore:sections.find(s=>s.kind==='lore').includedIds,cast:sections.find(s=>s.kind==='cast').includedIds,draft:sections.find(s=>s.kind==='draft').includedIds,archive:sections.find(s=>s.kind==='archive')?.includedIds||[]},tokens:messageTokens(messages),contextWindow:limit };
 }
 
 // GGUF vocabularies disagree radically about Cyrillic token counts. Fit the
@@ -358,7 +397,9 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
     episode.editorMessages.push({ role, content: text(content, 16000) }); episode.editorMessages = episode.editorMessages.slice(-100);
   }
   async function contextFor(state,project,episode,signal,job,options={}){
-    const context=await resolveFanficContext({state,project,episode,embeddings,signal,memories:approvedMemories(project,episode),...options});
+    const lorebooks=await localizeFanficLorebooks(project.lorebooks);
+    const localizedProject=lorebooks===project.lorebooks?project:{...project,lorebooks};
+    const context=await resolveFanficContext({state,project:localizedProject,episode,embeddings,signal,memories:approvedMemories(project,episode),...options});
     if(extensions)context.extensionInstructions=await extensions.prompt('fanfic',{projectId:project.id,episodeId:episode.id,request:options.instructions||''});
     for(const warning of context.report.warnings)if(job&&!job.warnings.includes(warning))job.warnings.push(warning);
     return context;
@@ -366,7 +407,7 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
   function reportFor(context,prepared){
     const included=prepared.included;
     return {...context.report,estimatedTokens:prepared.tokens,actualTokens:prepared.actualTokens??null,tokenizer:prepared.tokenizer||'estimate',contextWindow:prepared.contextWindow,maxTokens:prepared.maxTokens,
-      ...(included?{selectedMemory:context.report.selectedMemory.map(d=>({...d,included:included.memory.includes(d.id)})),selectedLore:context.report.selectedLore.map(d=>({...d,included:included.lore.includes(d.id)})),selectedFacts:(context.report.selectedFacts||[]).map(d=>({...d,included:(included.facts||[]).includes(d.id)})),selectedDraft:(context.report.selectedDraft||[]).map(d=>({...d,included:(included.draft||[]).includes(d.id)})),includedCast:included.cast}:{}),createdAt:now()};
+      ...(included?{selectedMemory:context.report.selectedMemory.map(d=>({...d,included:included.memory.includes(d.id)})),selectedLore:context.report.selectedLore.map(d=>({...d,included:included.lore.includes(d.id)})),selectedFacts:(context.report.selectedFacts||[]).map(d=>({...d,included:(included.facts||[]).includes(d.id)})),selectedDraft:(context.report.selectedDraft||[]).map(d=>({...d,included:(included.draft||[]).includes(d.id)})),...(context.report.archiveRecall?{selectedArchive:(context.report.selectedArchive||[]).map(d=>({...d,included:(included.archive||[]).includes(d.id)}))}:{}),includedCast:included.cast}:{}),createdAt:now()};
   }
 
   function generate(projectId, episodeId, input = {}) {
@@ -461,17 +502,26 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
           });
           return { projectId, episodeId, approved: true };
         }
+        const proseLimit=generation.action==='write'&&project.settings.sceneCount===1?(fanficProseLimit(generation.instructions)||fanficProseLimit(episode.brief)):null;
+        if (!generation.outline && proseLimit) {
+          // A separate plan can turn a two-sentence request into an introduction
+          // and displace the action the author explicitly asked to see.
+          generation.outline = [{title:episode.title,summary:episode.brief||generation.instructions}];
+          persist('Задание сцены готово', true);
+        }
         if (!generation.outline) {
           const context=await contextFor(state,project,episode,signal,job,{instructions:generation.instructions,currentText:generation.action==='continue'?generation.baseContent:''});
-          const outlineInstructions=`You plan a literary episode, not a roleplay reply. Return ONLY JSON {"scenes":[{"title":"...","summary":"..."}]}. Make ${project.settings.sceneCount} connected scenes in chronological order. Each summary is at most three short sentences describing what must happen in that scene. Cover the author brief and P.S. as writing instructions; never turn them into in-world events. Respect accepted continuity. Write in the author's language, Russian by default.`;
+          const outlineInstructions=`You plan a literary episode, not a roleplay reply. Return ONLY JSON {"scenes":[{"title":"...","summary":"..."}]}. Make ${project.settings.sceneCount} connected scenes in chronological order. Each summary is at most three short sentences describing what must happen in that scene. Cover the author brief and P.S. as writing instructions; never turn them into in-world events. Respect accepted continuity. ${writingLanguageInstruction(project.settings)}`;
           const outlineContext=prepared=>({request:prepared.messages[1].content});
           const prepared = await prepareFanficMessages({ project, episode, connection, instructions: generation.instructions, ...context, purpose: 'plan',maxTokensOverride:planningProfile.maxTokens },{secret:getSecret(connection.id),signal,countTokens,tokenMessages:prepared=>[{role:'system',content:outlineInstructions},{role:'user',content:JSON.stringify(outlineContext(prepared))}]});
-          const outline = validateOutline(await structured({ state, chat: { connectionId: connection.id }, getSecret, signal, name: 'fanfic_outline', schema: fanficOutlineSchema, maxTokens:prepared.maxTokens, temperature:planningProfile.temperature,adaptInstruction:true,
+          const parseOutline=raw=>validateOutline(raw,project.settings.sceneCount);
+          const outline = parseOutline(await structured({ state, chat: { connectionId: connection.id }, getSecret, signal, name: 'fanfic_outline', schema: fanficOutlineSchema, maxTokens:prepared.maxTokens, temperature:planningProfile.temperature,adaptInstruction:true,
             instructions:outlineInstructions,
-            context:outlineContext(prepared), parse: raw => validateOutline(raw, project.settings.sceneCount) }), project.settings.sceneCount);
+            context:outlineContext(prepared),parse:parseOutline }));
           generation.outline = outline.scenes; persist('План готов', true);
         }
         const wordBudget=generation.action==='rewrite'?null:await measureFanficWordBudget(connection,getSecret(connection.id),episode.brief+' '+generation.instructions,{signal,countTokens});
+        let localRewriteContext;
         for (let i = generation.sceneIndex; i < generation.outline.length; i++) {
           signal.throwIfAborted();
           const stage = generation.action === 'rewrite' ? 'Переписывание выделенного фрагмента' : `Детальная генерация: сцена ${i + 1}/${generation.outline.length}`;
@@ -483,49 +533,122 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
             const selected=generation.editParts?.[i]??generation.baseContent.slice(generation.selectionStart,generation.selectionEnd);
             const rewriteArgs={state,chat:{connectionId:connection.id},getSecret,signal,name:'fanfic_rewrite',schema:objectShape({replacement:stringShape}),
               maxTokens:Math.min(rewriteProfile.maxTokens,Math.floor((Number(connection.contextWindow)||8192)/3),Math.max(256,Math.ceil(selected.length/3)*2+160)),temperature:rewriteProfile.temperature,adaptInstruction:true,
-              instructions:'Ты редактор, а не рассказчик. Измени ТОЛЬКО исходный фрагмент по пожеланию автора. Не продолжай сюжет, не добавляй персонажей, действий или следующую сцену. Сохрани факты и имена, кроме явно запрошенных изменений. Пиши replacement на языке исходного фрагмента. Не переводи текст. Объём примерно равен исходному. Верни JSON {"replacement":"отредактированный фрагмент"}. Никаких объяснений. Не копируй эти инструкции в replacement.',
-              context:{request:generation.instructions,style:shorten(project.settings.style,350),source:selected},
+              instructions:'Ты редактор, а не рассказчик. Измени ТОЛЬКО исходный фрагмент по пожеланию автора. Не продолжай сюжет, не добавляй персонажей, действий или следующую сцену. Сохрани факты и имена, кроме явно запрошенных изменений. Пиши replacement на языке исходного фрагмента. Не переводи текст. Учитывай стиль, лицо и время из voice, если последнее пожелание не требует их изменить. Объём примерно равен исходному. Верни JSON {"replacement":"отредактированный фрагмент"}. Никаких объяснений. Не копируй эти инструкции в replacement.',
+              context:{request:generation.instructions,voice:rewriteVoice(project.settings),source:selected},
               parse:raw=>{const value=typeof raw==='string'?parseObject(raw):raw;if(typeof value?.replacement!=='string'||!value.replacement.trim())throw new Error('Нужен непустой replacement.');if(value.replacement.length>Math.max(1200,selected.length*4))throw new Error('Замена слишком велика: отредактируй фрагмент без продолжения сюжета.');if((selected.match(/[А-Яа-яЁё]/g)||[]).length>(selected.match(/[A-Za-z]/g)||[]).length+20&&(value.replacement.match(/[А-Яа-яЁё]/g)||[]).length<(value.replacement.match(/[A-Za-z]/g)||[]).length)throw new Error('Исходный фрагмент на русском. replacement должен быть на русском языке, перевод недопустим.');return value.replacement;}};
-            const rewriteMessages=[{role:'system',content:rewriteArgs.instructions},{role:'user',content:JSON.stringify(rewriteArgs.context)}];
-            const actual=await countTokens(connection,getSecret(connection.id),rewriteMessages,{signal,adaptInstruction:true,disableThinking:true});
-            if((actual??messageTokens(rewriteMessages)*1.6)+rewriteArgs.maxTokens+260>(Number(connection.contextWindow)||8192)){
+            const measure=async context=>{
+              const messages=[{role:'system',content:rewriteArgs.instructions},{role:'user',content:JSON.stringify(context)}];
+              const exact=await countTokens(connection,getSecret(connection.id),messages,{signal,adaptInstruction:true,disableThinking:true});
+              return exact??messageTokens(messages)*1.6;
+            };
+            const available=(Number(connection.contextWindow)||8192)-rewriteArgs.maxTokens-260;
+            const protectedTokens=await measure(rewriteArgs.context);
+            if(protectedTokens>available){
               if(selected.length<2)throw fail('Пожелание редактору не помещается в контекст этой модели. Сократите его или увеличьте контекст; исходный текст сохранён.');
               const halves=breakProse(selected,Math.max(1,Math.floor(selected.length/2)));
               generation.editParts||=[selected];generation.editParts.splice(i,1,...halves);
               generation.outline=generation.editParts.map((_,index)=>({title:`Правка фрагмента ${index+1}`,summary:generation.instructions}));
               persist('Фрагмент разделён по фактическому контексту модели',true);i--;continue;
             }
+            if(available-protectedTokens>=100){
+              localRewriteContext||=await contextFor(state,project,episode,signal,job,{instructions:generation.instructions,currentText:generation.baseContent.slice(generation.selectionStart,generation.selectionEnd)});
+              const reference=packFanficEditorReferences({lore:localRewriteContext.lore,facts:localRewriteContext.facts.map(canonFactReference),archive:localRewriteContext.archive,
+                continuity:localRewriteContext.memories.slice(-2),cast:rankFanficCast(project,generation.instructions,selected)},Math.floor(Math.min(1500,(available-protectedTokens)*2)));
+              if(Object.keys(reference).length){
+                const optionalInstruction='\nreference — справочные данные этого произведения. Используй их только для точности выделенного текста. Не переноси в замену новые события из этих записей.';
+                const withReference={...rewriteArgs.context,reference};
+                rewriteArgs.instructions+=optionalInstruction;
+                if(await measure(withReference)<=available)rewriteArgs.context=withReference;
+                else rewriteArgs.instructions=rewriteArgs.instructions.slice(0,-optionalInstruction.length);
+              }
+            }
             const replacement=await structured(rewriteArgs);
             signal.throwIfAborted();generation.completedText=(generation.completedText||'')+replacementAtSourceBoundary(selected,replacement);generation.partial='';generation.sceneIndex=i+1;persist(`Фрагмент ${i+1}/${generation.outline.length} сохранён`,true);continue;
           }
+          let languageRetry=false,otherLanguageDraft='';
           for (let request = 0; request < 3; request++) {
+            const previousPartial=generation.partial;
             const currentText = generation.action === 'rewrite' ? generation.partial : generation.action === 'continue' ? compose(generation) : join(generation.completedText, generation.partial);
             const continuing = generation.partial.length > 0;
             const editing=generation.action==='rewrite';
             const editStart=editing?generation.selectionStart+(generation.editParts||[]).slice(0,i).join('').length:0;
             const selected=editing?(generation.editParts?.[i]??generation.baseContent.slice(generation.selectionStart,generation.selectionEnd)):'';
-            const context=await contextFor(state,project,episode,signal,job,{instructions:generation.instructions,currentText:editing?selected:currentText,scene:generation.outline[i]});
+            const context=await contextFor(state,project,episode,signal,job,{instructions:generation.instructions,currentText:editing?selected:currentText,scene:proseLimit?undefined:generation.outline[i]});
+            const wordLimit=fanficSceneWordLimit(Math.min(writingProfile.maxTokens,Math.floor((Number(connection.contextWindow)||8192)*.32)),wordBudget?.tokensPerWord);
+            const sceneLimit=project.settings.writingLanguage==='en'
+              ? 'Write at most '+wordLimit+' words. Respect a shorter length requested by the author. Finish after the requested events, with a complete sentence. Do not begin another scene.'
+              : 'Эта сцена должна быть короткой: не более '+wordLimit+' слов. Если автор просит меньший объём, соблюдай его. Заверши сразу после запрошенных событий, полным предложением. Не начинай следующую сцену.';
             const prepared = await prepareFanficMessages({ project, episode, connection, ...context, purpose: generation.action,
-              instructions: generation.instructions + (continuing ? '\nThe response was interrupted. Continue exactly after its last character, completing any unfinished sentence. Never restart or repeat the response. Finish naturally within '+Math.min(50,fanficSceneWordLimit(writingProfile.maxTokens,wordBudget?.tokensPerWord))+' words; do not introduce new plot turns.' : editing?'\nВерни только переработанный исходный фрагмент. Объём соразмерен исходному.':`\nЭта сцена должна быть короткой: не более ${fanficSceneWordLimit(Math.min(writingProfile.maxTokens,Math.floor((Number(connection.contextWindow)||8192)*.32)),wordBudget?.tokensPerWord)} слов. Если автор просит меньший объём, соблюдай его. Заверши сразу после запрошенных событий, полным предложением. Не начинай следующую сцену.`),
-              maxTokensOverride:editing?rewriteProfile.maxTokens:writingProfile.maxTokens,currentText, scene: { ...generation.outline[i], index: i + 1, total: generation.outline.length, next: generation.outline[i + 1]?.summary || '' },
+              instructions: generation.instructions + (continuing ? '\nThe response was interrupted. Continue exactly after its last character, completing any unfinished sentence. Never restart or repeat the response. Finish naturally within '+Math.min(50,fanficSceneWordLimit(writingProfile.maxTokens,wordBudget?.tokensPerWord))+' words; do not introduce new plot turns.' : editing?'\nВерни только переработанный исходный фрагмент. Объём соразмерен исходному.':'\n'+sceneLimit)+(languageRetry?'\n'+writingLanguageInstruction(project.settings):''),
+              maxTokensOverride:editing?rewriteProfile.maxTokens:writingProfile.maxTokens,currentText, scene: proseLimit?undefined:{ ...generation.outline[i], index: i + 1, total: generation.outline.length, next: generation.outline[i + 1]?.summary || '' },
               selectedText: selected,
               surroundingContext: editing ? { before: generation.baseContent.slice(Math.max(0, editStart - 900), editStart), after: generation.baseContent.slice(editStart+selected.length, editStart+selected.length+900) } : undefined },{secret:getSecret(connection.id),signal,countTokens});
             patch(projectId,episodeId,(_p,e)=>{e.contextReport=reportFor(context,prepared);});
-            const before = generation.partial.length;
-            let finishReason;const continuationJoiner=continuing?createTextContinuationJoiner(generation.partial):null;
-            try {
-            for await (const chunk of stream(connection, getSecret(connection.id), prepared.messages, { signal, stop:fanficStops, disableThinking: true,adaptInstruction:true,guardRepetition:true, onFinish: reason => { finishReason = reason; }, preset: { maxTokens: prepared.maxTokens, temperature:editing?rewriteProfile.temperature:writingProfile.temperature } })) {
-              signal.throwIfAborted();
-              // Continuation may begin with a suffix of an unfinished word.
-              // Never insert a speculative space between letters.
-              generation.partial += continuationJoiner?continuationJoiner.push(chunk):chunk; job.text = generation.partial;
-              if (compose(generation).length > 2000000) throw fail('Эпизод достиг лимита в 2 миллиона символов. Создайте следующий эпизод.');
-              persist(stage);
+            const continuationJoiner=continuing?(editing?createTextContinuationJoiner(generation.partial):createFanficProseJoiner(generation.partial)):null;
+            let messages=prepared.messages;
+            if(languageRetry&&otherLanguageDraft&&!continuing){
+              const correction=[
+                {role:'system',content:writingLanguageInstruction(project.settings)+' Translate the draft into the requested language. Return only literary prose. Preserve characters, established events, and dialogue. Follow the author’s requested opening and length.'},
+                {role:'user',content:JSON.stringify({draft:otherLanguageDraft,authorRequest:shorten(generation.instructions,650),language:project.settings.writingLanguage})}
+              ];
+              if(messageTokens(correction)+prepared.maxTokens+150<=prepared.contextWindow)messages=correction;
             }
-            } finally {if(continuationJoiner){generation.partial+=continuationJoiner.flush();job.text=generation.partial;persist(stage);}}
-            if (!generation.partial.slice(before).trim()) throw new Error(before>0
+            let finishReason, received=false, hasText=false;
+            const append=suffix=>{
+              if(!suffix)return;
+              if(!received&&continuationJoiner?.prefix!==undefined)generation.partial=continuationJoiner.prefix;
+              received=true;
+              hasText||=!!suffix.trim();
+              generation.partial+=suffix;
+              job.text=generation.partial;
+              if(compose(generation).length>2000000)throw fail('Эпизод достиг лимита в 2 миллиона символов. Создайте следующий эпизод.');
+              persist(stage);
+            };
+            try {
+              for await (const chunk of stream(connection, getSecret(connection.id), messages, { signal, stop:fanficStops, disableThinking: true,adaptInstruction:true,guardRepetition:true, onFinish: reason => { finishReason = reason; }, preset: { maxTokens: prepared.maxTokens, temperature:editing?rewriteProfile.temperature:writingProfile.temperature } })) {
+                signal.throwIfAborted();
+                append(continuationJoiner?continuationJoiner.push(chunk):chunk);
+              }
+            } finally {if(continuationJoiner)append(continuationJoiner.flush());}
+            if(!hasText)throw new Error(continuing
               ? 'Модель не смогла завершить оборванную сцену. Весь полученный черновик сохранён. Нажмите «Возобновить» или выберите другую модель.'
               : 'Модель не вернула художественный текст. Повторите продолжение или выберите другую модель.');
+            if(!editing&&wrongWritingLanguage(generation.partial,project.settings.writingLanguage)){
+              if(!continuing)otherLanguageDraft=cleanFanficProse(generation.partial);
+              generation.partial=previousPartial;
+              job.text=previousPartial;
+              persist(stage,true);
+              if(languageRetry||request===2)throw fail(wrongLanguageMessage);
+              languageRetry=true;
+              continue;
+            }
+            const bounded=proseLimit&&boundedFanficProse(generation.partial,proseLimit,finishReason==='length');
+            if(bounded){
+              let finalProse=bounded;
+              const completeDraft=completeFanficProse(cleanFanficProse(generation.partial));
+              if(completeDraft.length>bounded.length){
+                // Keep later actions when the model overran the requested length.
+                const language=project.settings.writingLanguage;
+                const limit=proseLimit.paragraph?'one paragraph':proseLimit.min===proseLimit.max?proseLimit.max+' sentences':proseLimit.min+' to '+proseLimit.max+' sentences';
+                const compression=[
+                  {role:'system',content:writingLanguageInstruction(project.settings)+' Edit the draft into '+limit+'. Return only the finished literary prose. Keep the requested actions and replies even when they occur near the end of the draft. Cut setup and headings first. Do not introduce new events.'},
+                  {role:'user',content:JSON.stringify({authorRequest:shorten(generation.instructions||episode.brief,850),draft:completeDraft})}
+                ];
+                try {
+                  const exact=connection.id==='sas-local'?await countTokens(connection,getSecret(connection.id),compression,{signal,adaptInstruction:true,disableThinking:true}):null;
+                  if((exact??messageTokens(compression)*1.6)+prepared.maxTokens+160<=prepared.contextWindow){
+                    let revised='';
+                    for await (const chunk of stream(connection,getSecret(connection.id),compression,{signal,stop:fanficStops,disableThinking:true,adaptInstruction:true,guardRepetition:true,preset:{maxTokens:prepared.maxTokens,temperature:Math.min(.2,writingProfile.temperature)}}))revised+=chunk;
+                    revised=cleanFanficProse(revised);
+                    if(revised&&completeFanficProse(revised)===revised&&!boundedFanficProse(revised,proseLimit,false)&&!wrongWritingLanguage(revised,language))finalProse=revised;
+                  }
+                } catch { signal.throwIfAborted(); }
+              }
+              generation.partial=finalProse;
+              job.text=finalProse;
+              persist(stage,true);
+              break;
+            }
             if (finishReason !== 'length') break;
             persist(`Завершение сцены ${i + 1}/${generation.outline.length}: продолжение ${request + 1}`, true);
             if (request === 2) {
@@ -537,8 +660,9 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
                 const ending=await finishFanficScene({state,connection,getSecret,signal,scene:generation.outline[i],tail:generation.partial,
                   instructions:episode.brief+'\n'+generation.instructions,maxTokens:writingProfile.maxTokens,temperature:writingProfile.temperature,structured,countTokens});
                 signal.throwIfAborted();
-                const seam=createTextContinuationJoiner(generation.partial);
-                generation.partial+=seam.push(ending)+seam.flush();job.text=generation.partial;
+                const seam=createFanficProseJoiner(generation.partial);
+                const joined=seam.push(ending)+seam.flush();
+                generation.partial=seam.prefix+joined;job.text=generation.partial;
                 job.warnings.push(`Сцена ${i+1} завершена коротким дополнением после трёх ограниченных ответов. Проверьте связность заключительной фразы.`);
                 persist('Завершение сцены сохранено',true);
               } catch(error) {
@@ -593,17 +717,52 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
   router.patch('/projects/:id', route((req, res) => {
     tasks.assertIdle(); const state = getState(); read(req.params.id);
     const result = patch(req.params.id, null, project => {
-      const oldReferences=JSON.stringify([project.world,project.canon,project.divergence,project.characters,project.personas,project.lorebooks]);
+      if (req.body.expectedUpdatedAt !== undefined && req.body.expectedUpdatedAt !== project.updatedAt) {
+        throw fail('Произведение изменилось. Откройте редактор заново.', 409);
+      }
+      const referenceData=()=>JSON.stringify([project.world,project.canon,project.divergence,project.characters,project.personas,
+        project.lorebooks.map(({language,...book})=>book)]);
+      const oldReferences=referenceData();
+      const oldLoreLanguages=JSON.stringify(project.lorebooks.map(({id,language})=>[id,language||'ru']));
       for (const key of ['title', 'world', 'canon', 'divergence']) if (has(req.body, key)) project[key] = text(req.body[key], key === 'title' ? 200 : 12000);
       if (!project.title.trim()) project.title = 'Новый фанфик';
       if (has(req.body, 'settings')) project.settings = settingsOf({ ...project.settings, ...req.body.settings });
       for (const [key, field] of [['characterIds', 'characters'], ['personaIds', 'personas'], ['lorebookIds', 'lorebooks']]) if (has(req.body, key)) project[field] = updateSnapshots(req.body, field, state, project[field]);
-      if(oldReferences!==JSON.stringify([project.world,project.canon,project.divergence,project.characters,project.personas,project.lorebooks]))for(const episode of project.episodes){
+      if (has(req.body, 'lorebook')) {
+        const input = req.body.lorebook;
+        if (!input || typeof input !== 'object' || !Array.isArray(input.entries) || input.entries.length > 300 ||
+            typeof input.name !== 'string' || !input.name.trim() ||
+            input.entries.some(entry => typeof entry?.name !== 'string' || !entry.name.trim() || typeof entry.content !== 'string' || !entry.content.trim())) {
+          throw fail('Заполните название лорбука и текст каждой записи.');
+        }
+        const previous = input.id ? project.lorebooks.find(book => book.id === input.id) : null;
+        if (input.id && !previous) throw fail('Лорбук не найден.', 404);
+        if (!previous && project.lorebooks.length >= 20) throw fail('Выберите не более 20 карточек или лорбуков.');
+        const saved = snapshotLore({...input,id:previous?.id,sourceId:previous?.sourceId,language:input.language??previous?.language});
+        if (previous) project.lorebooks = project.lorebooks.map(book => book.id === saved.id ? saved : book);
+        else project.lorebooks.push(saved);
+      }
+      if(oldLoreLanguages!==JSON.stringify(project.lorebooks.map(({id,language})=>[id,language||'ru']))) {
+        for(const episode of project.episodes)episode.contextReport=null;
+      }
+      if(oldReferences!==referenceData())for(const episode of project.episodes){
         if(episode.content)episode.needsReview=true;
         episode.contextReport=null;episode.editProposal=null;episode.continuityReview=null;
         if(episode.generation){episode.generation=null;episode.status='draft';episode.error='';episode.stage='Материалы произведения изменены';episode.revision=(episode.revision||0)+1;}
       }
     }); res.json(result);
+  }));
+  router.patch('/projects/:id/portraits/:cardId', route((req, res) => {
+    tasks.assertIdle();
+    const avatar = req.body.avatar;
+    if (typeof avatar !== 'string' || avatar.length > 64000 || !/^data:image\/(png|jpeg|webp);base64,[a-z\d+/]+={0,2}$/i.test(avatar))
+      throw fail('Выберите PNG, JPEG или WebP до 8 МБ.');
+    const result = patch(req.params.id, null, project => {
+      const card = [...project.characters,...project.personas].find(card => card.id === req.params.cardId);
+      if (!card) throw fail('Карточка персонажа не найдена.', 404);
+      card.avatar = avatar;
+    });
+    res.json(result);
   }));
   router.delete('/projects/:id', route((req, res) => {
     tasks.assertIdle(); read(req.params.id); const state = getState(); state.fanficProjects = state.fanficProjects.filter(p => p.id !== req.params.id);
@@ -722,7 +881,10 @@ export function createFanfic({ getState, saveState, getSecret, tasks, embeddings
     res.json({ spec: 'sas_fanfic_v1', project: exported });
   }));
   router.post('/import', route((req, res) => {
-    tasks.assertIdle(); const input = req.body?.project || req.body;
+    tasks.assertIdle(); const input = has(req.body,'project')?req.body.project:req.body;
+    if ((has(req.body,'spec')&&req.body.spec!=='sas_fanfic_v1')||typeof input?.title!=='string'||!input.title.trim()||!Array.isArray(input.episodes)) {
+      throw fail("Выберите JSON произведения SAS, выгруженный через «Проект JSON».");
+    }
     const state = getState(), project = normalizeFanficProject(input, state, { importing: true }); state.fanficProjects ||= []; state.fanficProjects.push(project); saveState(state); res.status(201).json(project);
   }));
   return { router, generate, read };

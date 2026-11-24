@@ -7,11 +7,13 @@ export function roomHistories(state){
   return [...new Map(histories.map(h=>[h.id,h])).values()];
 }
 export function historySummaries(state){return roomHistories(state).map(h=>({id:h.id,name:h.name||'Без названия',mode:h.mode||'roleplay',chatId:h.chatId,messageCount:h.messages?.length||0,createdAt:h.createdAt,updatedAt:h.messages?.at(-1)?.createdAt||h.createdAt,current:h.id===state.multiplayer?.id,hostPersonaId:h.personas?.host?.id}));}
-export function selectRoomHistory(state,{historyId,newHistory=false,name,chatId,mode='roleplay'}={}){
+import {normalizeCast} from '../shared/bigroom.mjs';
+export function selectRoomHistory(state,{historyId,newHistory=false,name,chatId,mode='roleplay',castIds}={}){
   const all=roomHistories(state);let selected;
   if(newHistory){
     if(mode==='roleplay'&&!state.chats.some(c=>c.id===chatId))throw new Error('Выберите персонажа ведущего для новой истории.');
-    selected={id:crypto.randomUUID(),mode,name:String(name||'Наша история').trim().slice(0,100),chatId,createdAt:new Date().toISOString(),messages:[],memory:[],memorySettings:{...roomMemoryDefaults,vectorMemory:!!state.settings.localEmbeddings||!!state.settings.embeddings?.model},summary:'',scene:emptyScene(),personas:{},weights:{}};
+    const cast=mode==='bigroom'?normalizeCast(state.characters,castIds):undefined;
+    selected={id:crypto.randomUUID(),mode,name:String(name||'Наша история').trim().slice(0,100),chatId:mode==='bigroom'?'':chatId,...(cast?{cast}:{}),createdAt:new Date().toISOString(),messages:[],memory:[],memorySettings:{...roomMemoryDefaults,vectorMemory:!!state.settings.localEmbeddings||!!state.settings.embeddings?.model},summary:'',scene:emptyScene(),personas:{},weights:{}};
   }else if(historyId){selected=all.find(h=>h.id===historyId);if(!selected)throw new Error('История мультиплеера не найдена.');}
   else selected=state.multiplayer?.id?state.multiplayer:{...state.multiplayer,id:crypto.randomUUID(),createdAt:new Date().toISOString()};
   state.multiplayerHistories=all.filter(h=>h.id!==selected.id);state.multiplayer=structuredClone(selected);return state.multiplayer;

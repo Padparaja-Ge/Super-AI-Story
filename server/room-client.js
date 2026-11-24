@@ -22,7 +22,7 @@ function addMessage(m){
   const container=$('messages'),follow=container.scrollHeight-container.scrollTop-container.clientHeight<100;
   archive.set(m.id,m);messages.set(m.id,m);let box=boxes.get(m.id);
   if(!box){box=document.createElement('article');box.className='message';const who=document.createElement('b'),text=document.createElement('span');text.className='message-content';box.append(who,text);boxes.set(m.id,box);$('messages').append(box);}
-  box.querySelector('b').replaceChildren(avatarElement(room.avatars?.[m.userId]),document.createTextNode((m.name||'Ведущий')+(m.editedAt?' · изменено хостом':'')));box.querySelector('.message-content').textContent=m.content||'';
+  box.querySelector('b').replaceChildren(avatarElement(room.cast?.find(character=>character.id===m.characterId)?.avatar||room.avatars?.[m.userId]),document.createTextNode((m.name||'Ведущий')+(m.editedAt?' · изменено хостом':'')));box.querySelector('.message-content').textContent=m.content||'';
   if(m.kind==='image'&&!box.querySelector(':scope > img'))for(let i=0;i<Math.min(16,m.imageCount||0);i++){const image=document.createElement('img');image.src='/media/'+encodeURIComponent(m.imageId)+'/'+i+'?code='+encodeURIComponent($('code').value.trim());image.alt='Изображение сцены от хоста';image.loading='lazy';box.append(image);}
   if(m.content?.trim()&&!box.querySelector('.room-translate')){const translate=document.createElement('button');translate.type='button';translate.className='secondary room-translate';translate.textContent=uiText('Перевести');translate.onclick=async()=>{translate.disabled=true;try{const response=await fetch('/translate?code='+encodeURIComponent($('code').value.trim()),{method:'POST',headers:{'Content-Type':'application/json','X-SAS-Resume':activeToken},body:JSON.stringify({messageId:m.id,targetLang:$('translation-language').value||'ru'})}),result=await response.json();if(!response.ok)throw Error(result.error||'Перевод недоступен.');let translated=box.querySelector('.room-translation');if(!translated){translated=document.createElement('p');translated.className='room-translation';box.append(translated);}translated.textContent=result.translation;}catch(e){error(e.message);}finally{translate.disabled=false;}};box.append(translate);}
   while(messages.size>300){const id=messages.keys().next().value;messages.delete(id);boxes.get(id)?.remove();boxes.delete(id);}
@@ -31,7 +31,14 @@ function addMessage(m){
 const browserRecovery=createBrowserRecovery();
 const roomMedia=mountRoomMedia($('room-media'),{sendVoice:body=>{if(socket?.readyState===WebSocket.OPEN&&admission==='approved')socket.send(JSON.stringify({type:'voice',...body}));},audioUrl:id=>'/room-audio/'+encodeURIComponent(id)+'?code='+encodeURIComponent($('code').value.trim())});
 function downloadBundle(bundle,name){const href=URL.createObjectURL(new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=href;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);}
-function recoveryBundle(){const roomCopy=structuredClone(room);delete roomCopy.media;delete roomCopy.aiSettings;delete roomCopy.connectionId;return {spec:'sas_campaign_backup_v1',source:'guest',createdAt:new Date().toISOString(),incompleteArchive:!archiveComplete,missing:['private-host-memory','full-lorebooks','private-connections'],room:{...roomCopy,messages:[...archive.values()],personas:Object.fromEntries(participants.map(p=>[p.id,{id:p.id,name:p.personaName||p.name,avatar:p.avatar||'✧',description:''}]))},lorebooks:[],...(room.mode==='roleplay'?{narrator:{id:room.character?.id||'guest-narrator',name:room.character?.name||'Ведущий',description:'Ведущий восстановлен из доступной гостю копии.',blocks:[],lorebookIds:[]}}:{})};}
+function recoveryBundle(){
+ const roomCopy=structuredClone(room);
+ delete roomCopy.media;delete roomCopy.aiSettings;delete roomCopy.connectionId;
+ const cast=room.mode==='bigroom'?room.cast||[]:[];
+ if(room.mode==='bigroom')roomCopy.cast=cast.map(character=>character.id);
+ const publicCharacters=cast.map(character=>({id:character.id,name:character.name,avatar:character.avatar,subtitle:character.subtitle,description:'Персонаж восстановлен из доступной гостю копии.',blocks:[],lorebookIds:[]}));
+ return {spec:'sas_campaign_backup_v1',source:'guest',createdAt:new Date().toISOString(),incompleteArchive:!archiveComplete,missing:['private-host-memory','full-lorebooks','private-connections'],room:{...roomCopy,messages:[...archive.values()],personas:Object.fromEntries(participants.map(p=>[p.id,{id:p.id,name:p.personaName||p.name,avatar:p.avatar||'✧',description:''}]))},lorebooks:[],...(room.mode==='bigroom'?{characters:publicCharacters}:{}),...(room.mode==='roleplay'?{narrator:{id:room.character?.id||'guest-narrator',name:room.character?.name||'Ведущий',description:'Ведущий восстановлен из доступной гостю копии.',blocks:[],lorebookIds:[]}}:{})};
+}
 $('recovery-enabled').checked=browserRecovery.enabled();$('recovery-enabled').onchange=()=>browserRecovery.setEnabled($('recovery-enabled').checked);
 $('recover-last').onclick=async()=>{try{const bundle=await browserRecovery.latest();if(!bundle)throw Error('Сохранённых копий пока нет.');downloadBundle(bundle,'SAS-campaign-recovered.json');}catch(e){error(e.message||uiText('Не удалось открыть копию.'));}};
 $('backup').onclick=async()=>{try{await archiveReady;if(admission!=='approved')throw Error('Сначала получите допуск хоста.');downloadBundle(recoveryBundle(),'SAS-campaign-guest.json');}catch(e){error(e.message);}};
@@ -39,10 +46,42 @@ $('lobby-ready').onclick=()=>{const own=room.lobby?.players?.find(p=>p.id===self
 $('lobby-leave').onclick=()=>{$('leave').click();};
 function renderLobby(){const waiting=joined&&(admission==='pending'||room.lobby?.enabled&&room.lobby.phase!=='playing');$('lobby').hidden=!waiting;$('game-panels').classList.toggle('lobby-hidden',waiting);$('game-layout').classList.toggle('lobby-hidden',waiting);$('room-media').hidden=admission!=='approved';$('lobby-status').textContent=admission==='pending'?uiText('Заявка отправлена. Ожидаем допуска хоста.'):uiText('Вы допущены. Подтвердите готовность и дождитесь начала игры.');const own=room.lobby?.players?.find(p=>p.id===selfId);$('lobby-ready').hidden=admission!=='approved';$('lobby-ready').textContent=own?.ready?uiText('Не готов'):uiText('Я готов');$('lobby-players').replaceChildren(...(room.lobby?.players||[]).map(p=>{const item=document.createElement('li');item.textContent=p.name+' · '+p.personaName+' · '+(p.status==='pending'?'ожидает допуска':p.ready?'готов':'не готов');return item;}));}
 function renderDiceLabel(){const byAction=room.tactical?.version===2&&Number($('sides').value)===20;$('dice').textContent=byAction?uiText('d20 по действию'):uiText('Бросить кубик');$('dice').title=byAction?uiText('Сначала отправьте свои слова и действия. Ведущий назначит сложность последнего вашего действия, движок рассчитает результат. Свободная проверка доступна в «Мой ход».'):uiText('Бросить выбранный кубик');}
+let campaignJournalKey='';
+function renderCampaignJournal(){
+  const journal=$('campaign-journal');
+  if(!journal)return;
+  const campaign=room.campaign;
+  journal.hidden=!campaign;
+  if(!campaign)return;
+  const title=uiText('Журнал кампании'), labels={
+    ended:uiText('Кампания завершена после гибели героя.'), downtime:uiText('Передышка'),
+    offered:uiText('Зацепка'), active:uiText('В работе')
+  };
+  const key=JSON.stringify([campaign,title,labels]);
+  if(key===campaignJournalKey)return;
+  campaignJournalKey=key;
+  const summary=document.createElement('summary');
+  summary.textContent=title+(labels[campaign.phase]?' · '+labels[campaign.phase]:'');
+  journal.replaceChildren(summary);
+  for(const quest of campaign.quests||[]){
+    if(!['active','offered'].includes(quest.status))continue;
+    const label=document.createElement('strong'), description=document.createElement('p');
+    label.textContent=quest.title+' · '+labels[quest.status];
+    description.textContent=quest.status==='offered'?quest.hook:quest.goal;
+    journal.append(label,description);
+    if(quest.progress?.length){
+      const notes=document.createElement('ul');
+      for(const progress of quest.progress){const item=document.createElement('li');item.textContent=progress;notes.append(item);}
+      journal.append(notes);
+    }
+  }
+}
 function renderMetadata(){
+  renderCampaignJournal();
   renderDiceLabel();
   browserRecovery.setAllowed(room.autosaveEnabled!==false);
-  $('title').textContent=room.name||uiText('Комната');$('character').textContent=room.tactical?uiText('AI Game Master · ведущий всех NPC'):uiText('RP-персонаж: ')+(room.character?.name||'Не выбран');
+  $('title').textContent=room.name||uiText('Комната');
+  $('character').textContent=room.mode==='bigroom'?uiText('Большая комната')+' · '+(room.cast||[]).map(character=>character.name).join(', '):room.tactical?uiText('AI Game Master · ведущий всех NPC'):uiText('RP-персонаж: ')+(room.character?.name||'Не выбран');
   $('lore').textContent=uiText('Мир · Лорбук: ')+((room.lorebooks||[]).map(b=>b.name).join(', ')||'не выбраны')+(room.tactical?' · Правила · Rule book: '+((room.rulebooks||[]).map(b=>b.name).join(', ')||'не выбраны'):'');
   const names=ids=>ids.map(id=>id==='narrator'?'Ведущий':participants.find(p=>p.id===id)?.name||'Игрок').join(', ');
   $('turn').textContent=room.tactical?.version===2?uiText("Раунд {0} · {1}",[room.tactical.round,room.tactical.phase==='gm'?'AI-ведущий':room.tactical.actors.find(a=>a.id===room.tactical.order[room.tactical.turn])?.name||'Ожидание']):room.tactical?(room.tactical.inCombat?`Раунд ${room.tactical.round} · ход ${room.tactical.actors.find(a=>a.id===room.tactical.order[room.tactical.turn])?.name||'—'}`:'Свободная сцена · бой не начат'):turn.free?uiText('Свободный порядок ходов'):uiText("Раунд {0}. Сейчас: {1}. Очередь: {2}",[turn.round,names(turn.eligible||[]),(turn.order||[]).map(p=>names([p.id])+' ('+p.weight+')').join(' → ')]);
@@ -51,12 +90,13 @@ function renderMetadata(){
   $('narration-status').hidden=!incomplete||generating;
   $('narration-status').textContent=incomplete?(room.narration.reason==='validation'?'Ответ AI-ведущего не прошёл проверку последствий. Хост может исправить его или повторить проверку; ход ещё не завершён.':'Ответ AI-ведущего не закончен. Хост может дописать его в том же сообщении или завершить вручную. Рассчитанные действия повторно не выполняются.'):'';
   for(const [id,box] of boxes){const message=messages.get(id),partial=!generating&&(incomplete&&room.narration.messageId===id||message?.interrupted);let hint=box.querySelector('.message-incomplete-status');if(partial&&!hint){hint=document.createElement('small');hint.className='message-incomplete-status';box.append(hint);}if(hint){if(partial)hint.textContent=uiText('Ответ не закончен · ожидаем продолжения от хоста');else hint.remove();}}
-  const canWrite=joined&&admission==='approved'&&(!room.lobby?.enabled||room.lobby.phase==='playing')&&!generating&&!incomplete&&!participants.find(p=>p.id===selfId)?.muted&&(room.tactical?.version===2?room.tactical.phase==='players'&&room.tactical.order[room.tactical.turn]===selfId:turn.free||turn.eligible?.includes(selfId));
-  $('send').disabled=!canWrite||pending.size>0;$('dice').disabled=!canWrite||pending.size>0;
-  const own=room.tactical?.actors.find(a=>a.id===selfId);if(own&&currentPersona&&room.tactical.version===2){Object.assign(currentPersona,{level:own.level,className:own.className,abilities:own.abilities,inventory:own.inventory,spells:own.spells});try{localStorage.setItem('sas-guest-personas',JSON.stringify(personas));}catch{}}
-  renderGame(room,selfId,command,$('code').value.trim(),!joined||generating||incomplete||pending.size>0||participants.find(p=>p.id===selfId)?.muted);
+  const ended=room.campaign?.phase==='ended';
+  const canWrite=!ended&&joined&&admission==='approved'&&(!room.lobby?.enabled||room.lobby.phase==='playing')&&!generating&&!incomplete&&!participants.find(p=>p.id===selfId)?.muted&&(room.tactical?.version===2?room.tactical.phase==='players'&&room.tactical.order[room.tactical.turn]===selfId:turn.free||turn.eligible?.includes(selfId));
+  $('send').disabled=!canWrite||pending.size>0;$('dice').disabled=!canWrite||pending.size>0;$('improve').disabled=ended;
+  const own=room.tactical?.actors.find(a=>a.id===selfId);if(own&&!own.campaignReplacement&&currentPersona&&room.tactical.version===2){Object.assign(currentPersona,{level:own.level,className:own.className,abilities:own.abilities,inventory:own.inventory,spells:own.spells});try{localStorage.setItem('sas-guest-personas',JSON.stringify(personas));}catch{}}
+  renderGame(room,selfId,command,$('code').value.trim(),ended||!joined||generating||incomplete||pending.size>0||participants.find(p=>p.id===selfId)?.muted);
   renderLobby();roomMedia.update(room.media,{id:selfId,online:joined&&admission==='approved'});
-  $('status').textContent=generating?uiText('Ведущий пишет…'):incomplete?uiText('Ожидаем завершения ответа'):joined?uiText('В комнате'):uiText('Соединение закрыто');
+  $('status').textContent=ended?uiText('Кампания завершена'):generating?uiText('Ведущий пишет…'):incomplete?uiText('Ожидаем завершения ответа'):joined?uiText('В комнате'):uiText('Соединение закрыто');
 }
 function command(type,body={}){
   if(!joined||socket?.readyState!==WebSocket.OPEN)return error(uiText('Нет соединения с комнатой.'));
@@ -80,7 +120,11 @@ $('connect').onclick=async()=>{
     if(data.type==='media')room.media=data.media;
     if(data.room)room=data.room;if(data.participants)participants=data.participants;if(data.turn)turn=data.turn;if(data.generating!==undefined)generating=data.generating;
     if(data.type==='message'||data.type==='edit')addMessage(data.message);
-    if(data.type==='delta'){const m=messages.get(data.id)||{id:data.id,role:'assistant',name:room.character?.name||'Ведущий',content:''};addMessage({...m,content:m.content+data.text});}
+    if(data.type==='delta'){
+      const speaker=room.cast?.find(character=>character.id===room.speakerId);
+      const m=messages.get(data.id)||{id:data.id,role:'assistant',...(speaker?{characterId:speaker.id}:{}),name:speaker?.name||room.character?.name||'Ведущий',content:''};
+      addMessage({...m,content:m.content+data.text});
+    }
     if(data.type==='ack'){const p=pending.get(data.requestId);if(p?.type==='message'&&p.content===$('content').value)$('content').value='';pending.delete(data.requestId);}
     if(data.type==='error'){pending.delete(data.requestId);error(data.error);}
     if(data.type==='kicked'){error(uiText('Хост исключил вас из комнаты.'));ws.close();}
@@ -102,7 +146,11 @@ $('improve').onclick=()=>{
 };
 window.addEventListener('message',event=>{
   if(event.source!==popup||event.origin!==localOrigin)return;
-  if(event.data?.type==='sas-rewrite-ready')popup.postMessage({type:'sas-rewrite-request',nonce,text:rewriteSource,persona:currentPersona,room:{...room,messages:[...messages.values()].slice(-4)}},localOrigin);
+  if(event.data?.type==='sas-rewrite-ready'){
+    const actor=room.tactical?.actors.find(actor=>actor.id===selfId);
+    const persona=actor?.campaignReplacement?{id:actor.personaId,name:actor.name,className:actor.className}:currentPersona;
+    popup.postMessage({type:'sas-rewrite-request',nonce,text:rewriteSource,persona,room:{...room,messages:[...messages.values()].slice(-4)}},localOrigin);
+  }
   if(event.data?.type==='sas-rewrite-result'&&event.data.nonce===nonce&&typeof event.data.text==='string'){
     if($('content').value===rewriteSource)$('content').value=event.data.text.slice(0,8000);else error(uiText('Черновик изменился. Скопируйте вариант из окна вашего SAS.'));
   }

@@ -8,7 +8,7 @@ import {beginInitiative,advanceInitiative,syncInitiative} from '../server/initia
 import {generateMap,populateMap,mapPNG} from '../server/battlemap.mjs';
 import {normalizeItem} from '../shared/equipment.mjs';
 import {defaultAbilities} from '../shared/srp.mjs';
-import {roomChat,sourceDocuments} from '../server/room-memory.mjs';
+import {createRoomMemory,roomChat,sourceDocuments} from '../server/room-memory.mjs';
 const persona=i=>({id:'sheet-'+i,name:['Рей','Мира','Торк'][i],kind:'srp',className:'Путешественник',abilities:{...defaultAbilities(),dexterity:10+i,constitution:10-i}});
 const resources=a=>JSON.stringify({hp:a.hp,slots:a.slots,actions:a.actions,fastActions:a.fastActions,move:a.move,inventory:a.inventory.map(i=>({id:i.id,quantity:i.quantity,equipped:i.equipped}))});
 function supply(a){a.inventory=[normalizeItem({id:'blade',name:'Меч',equipped:true,weapon:{reach:'melee',damage:'1d4',damageType:'slashing',range:1,hands:'one'}}),normalizeItem({id:'bow',name:'Лук',weapon:{reach:'ranged',damage:'1d4',damageType:'piercing',range:24,hands:'two',ammoTag:'arrows'}}),normalizeItem({id:'arrows',name:'Стрелы',ammoTag:'arrows',quantity:100})];a.spells=[];a.hp=a.maxHp;a.slots=a.maxSlots;}
@@ -48,5 +48,37 @@ test('1200 sequential engine rounds, 3 players, 60 generated battle maps: owners
  assert.equal(rounds,1200);assert.ok(turns>=5500);assert.ok(calls>1000&&hits>300&&misses>100&&rejected>100);
  assert.ok(game.eventArchive.length>10000);assert.equal(game.log.length,300);
  const room={id:'campaign',messages:[],tactical:game,memory:[]},chat=roomChat(room);assert.ok(chat.messages.some(m=>m.content.includes(game.eventArchive[0].text)));const docs=sourceDocuments(chat);assert.ok(docs.length>10000);assert.ok(!docs.some(d=>d.text.includes('FOREIGN_STORY')));
- t.diagnostic(JSON.stringify({rounds,turns,attempts:calls,hits,misses,rejected,maps:60,players:3,engineEvents:game.eventArchive.length,sourceDocuments:docs.length}));
+ const ask='Где сейчас лежит янтарный компас?';
+ const verified='Рей нашёл янтарный компас в сундуке.';
+ const message=(id,role,content,createdAt)=>({id,role,content,createdAt});
+ const restored=JSON.parse(JSON.stringify(game));
+ const archiveRoom={
+  ...room,mode:'dnd',id:'campaign-verified',tactical:restored,scene:{location:'Крепость'},
+  memorySettings:{archiveMemory:true,archiveMemoryVersion:2,vectorMemory:true,historyLimit:6},
+  messages:[
+   message('old-location','assistant','Янтарный компас лежал под лестницей.','2020-01-01T00:00:00.000Z'),
+   message('latest-location','assistant',verified,'2021-01-01T00:00:00.000Z'),
+   message('rumor','assistant','— Янтарный компас на крыше, — сказал трактирщик.','2025-01-01T00:00:00.000Z'),
+   ...Array.from({length:190},(_,i)=>message('patrol-'+i,'assistant','Лучники отправились на обход номер '+i+'.','2025-04-01T00:00:00.000Z')),
+   ...restored.actors.filter(a=>a.player).map(a=>({...message('turn-'+a.id,'user',a.id==='player-0'?ask:'Занимаю позицию у ворот.','2099-01-01T00:00:00.000Z'),authorId:a.id,name:'TABLE_NICK',personaName:a.name})),
+  ],
+ };
+ const state={settings:{embeddings:{connectionId:'encoder',threshold:.35}},connections:[{id:'encoder',model:'fixture',baseUrl:'http://127.0.0.1:8123/v1'}],lorebooks:[],multiplayer:archiveRoom};
+ const batches=[];
+ const memory=createRoomMemory({getState:()=>state,embeddings:{vectors:(_state,texts)=>{
+  batches.push(texts);
+  return texts.map(text=>/компас/iu.test(text)?[1,0]:[0,1]);
+ }}});
+ const archive=await memory.recall(state,roomChat(archiveRoom),undefined,{focusQuery:ask});
+ const stats=archive.report.archiveRecall;
+ assert.equal(stats.version,2);
+ assert.equal(stats.scope,'room:campaign-verified');
+ assert.equal(stats.vectorStatus,'ready');
+ assert.equal(stats.evidence,'found');
+ assert.ok(stats.scanned>10000);
+ assert.ok(stats.candidates<=48 && stats.embeddingPasses>=1 && stats.embeddingPasses<=3);
+ assert.equal(batches.length,stats.embeddingPasses);
+ assert.doesNotMatch(batches.flat().join(' '),/крыше|TABLE_NICK/u);
+ assert.deepEqual(archive.report.sourceExcerpts.map(({messageId,text,evidenceStatus})=>[messageId,text,evidenceStatus]),[['latest-location',verified,'narration']]);
+ t.diagnostic(JSON.stringify({rounds,turns,attempts:calls,hits,misses,rejected,maps:60,players:3,engineEvents:game.eventArchive.length,sourceDocuments:docs.length,archiveScanned:stats.scanned,archiveCandidates:stats.candidates,embeddingPasses:stats.embeddingPasses}));
 });

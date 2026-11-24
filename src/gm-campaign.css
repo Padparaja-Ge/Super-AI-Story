@@ -1,0 +1,39 @@
+.gm-profile-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 14px;
+  margin: 12px 0;
+}
+.gm-profile-settings .field { margin: 0; }
+.gm-campaign { margin: 0 0 12px; }
+.gm-campaign > summary, .gm-private-plan > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+.gm-campaign > summary::after, .gm-private-plan > summary::after {
+  content: '+';
+  margin-inline-start: auto;
+  color: var(--muted);
+}
+.gm-campaign[open] > summary::after, .gm-private-plan[open] > summary::after { content: '−'; }
+.gm-campaign-state, .gm-quest-status { color: var(--accent); font-size: .86em; }
+.gm-campaign-body { display: grid; gap: 12px; margin-top: 14px; }
+.gm-quest {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+.gm-quest header, .gm-campaign-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.gm-quest > .btn { justify-self: start; }
+.gm-campaign-actions .btn { white-space: normal; text-align: left; }
+.gm-private-plan { border-top: 1px solid var(--border); padding-top: 8px; }
+.gm-private-plan ul, .gm-campaign-body ul { padding-inline-start: 22px; }
+.gm-quest-archive { overflow-wrap: anywhere; }

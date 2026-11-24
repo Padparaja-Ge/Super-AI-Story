@@ -1,0 +1,43 @@
+{
+ "divine-blessing": {
+  "duration": 4.8,
+  "titleAt": 2.9,
+  "titleOut": 4.2,
+  "fadeOutAt": 4.35,
+  "source": "full",
+  "sources": [
+   {
+    "src": "divine-blessing.webm",
+    "type": "video/webm; codecs=\"vp9\""
+   },
+   {
+    "src": "divine-blessing.mp4",
+    "type": "video/mp4; codecs=\"avc1.640028\""
+   }
+  ],
+  "poster": "divine-blessing-poster.jpg"
+ },
+ "deaths-judgment": {
+  "duration": 4.8,
+  "strikeAt": 2.485,
+  "impact": {
+   "x": -0.46,
+   "y": 0.22
+  },
+  "titleAt": 3.105,
+  "titleOut": 4.25,
+  "fadeOutAt": 4.35,
+  "source": "full",
+  "sources": [
+   {
+    "src": "deaths-judgment.webm",
+    "type": "video/webm; codecs=\"vp9\""
+   },
+   {
+    "src": "deaths-judgment.mp4",
+    "type": "video/mp4; codecs=\"avc1.640028\""
+   }
+  ],
+  "poster": "deaths-judgment-poster.jpg"
+ }
+}

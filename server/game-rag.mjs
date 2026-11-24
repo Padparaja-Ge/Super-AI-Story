@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import {validMemory} from './memory.mjs';
 import {semanticChunkLorebook,chunkLorebookAsync} from './rag/chunking.mjs';
 import {hybridSearch,rerankResults} from './rag/search.mjs';
+import {archiveMemoryEnabled,archiveMemoryVersion,recallArchive} from './archive-recall.mjs';
 
 const hash=text=>crypto.createHash('sha256').update(text).digest('hex');
 const modes=new Set(['hybrid','full','summary','pinned','manual']);
@@ -23,7 +24,7 @@ export function localEmbeddingConnection(state){
  if(connection.id==='sas-local')return null;
  try{const url=new URL(connection.baseUrl);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return null;const host=url.hostname.toLowerCase();return host==='localhost'||host==='[::1]'||/^127(?:\.\d{1,3}){3}$/.test(host)?connection:null;}catch{return null;}
 }
-function sourceDescriptors(state,chat,policy,documents,posts){
+function sourceDescriptors(state,chat,policy,documents,posts,{archive=false,recentLimit=650,version=1}={}){
  const scope='room:'+chat.roomId,descriptors=[],selected=new Set(chat.lorebookIds||[]);
  for(const book of state.lorebooks||[]){
   if(!selected.has(book.id)||book.enabled===false||Number(chat.memorySettings?.loreBudget)===0)continue;
@@ -44,14 +45,45 @@ function sourceDescriptors(state,chat,policy,documents,posts){
  }
  if(policy.sources){
   const protectedIds=new Set(posts.map(m=>m.id));
-  for(const m of chat.messages.filter(m=>!protectedIds.has(m.id)&&narrative(m)).slice(-4))protectedIds.add(m.id);
-  const allowed=new Map();for(const doc of documents(chat))if(!protectedIds.has(doc.messageId))allowed.set(doc.messageId,doc);
+  for(const m of chat.messages.filter(m=>!protectedIds.has(m.id)&&narrative(m)).slice(-4))if(version===1&&(!archive||m.content.length<=recentLimit))protectedIds.add(m.id);
+  const allowed=new Set(archive?chat.messages.map(message=>message.id):documents(chat).map(doc=>doc.messageId));
+  for(const id of protectedIds)allowed.delete(id);
   for(const [index,m]of chat.messages.entries()){
    if(!allowed.has(m.id)||m.interrupted||m.continuationStatus==='incomplete'||['dice','image'].includes(m.kind)||!['user','assistant'].includes(m.role)||!m.content?.trim()||m.kind==='engine'&&m.round===chat.gameRound)continue;
    descriptors.push({id:'source:'+m.id,text:m.content,metadata:{source:m.kind==='engine'?'Подтверждённое событие движка':m.role==='assistant'?'Архив: ответ ведущего':'Архив: намерение игрока',scope,kind:'source',messageId:m.id,messageKind:m.kind,role:m.role,index,tags:[],vectorized:policy.vectors}});
   }
  }
  return descriptors;
+}
+async function recallStagedGame(state,chat,signal,{policy,scope,posts,embedding,sourceDocuments,focus}){
+ const scene=sceneOf(chat);
+ const postChars=Math.max(100,Math.floor(970/Math.max(1,posts.length)));
+ const query=focus||(posts.length?posts.map(post=>trimQuery(post.content,postChars)).join('\n'):trimQuery(chat.messages.filter(narrative).at(-1)?.content||scene.currentLocation||'',950));
+ const perRecentBudget=Math.max(125,Math.min(650,Math.floor((Number(state.connections?.find(c=>c.id===(chat.connectionId||state.activeConnectionId))?.contextWindow)||8192)*.12)));
+ const version=archiveMemoryVersion(chat.memorySettings);
+ const descriptors=sourceDescriptors(state,chat,policy,sourceDocuments,posts,{archive:true,recentLimit:perRecentBudget,version});
+ const documents=descriptors.map(({id,text,metadata})=>({id,text,metadata}));
+ const activePosts=new Set(posts.map(post=>post.id));
+ const evidence=chat.messages.filter(message=>!activePosts.has(message.id)&&narrative(message)).slice(-4)
+  .filter(message=>message.role==='assistant'&&message.content.length<=perRecentBudget).map(message=>message.content);
+ const relatedQuery=[scene.currentLocation,...scene.presentNPCs.slice(0,3),...scene.activeQuests.slice(0,2),query.slice(0,500)].filter(Boolean).join(' · ');
+ const threshold=Number(state.settings?.embeddings?.threshold??.35);
+ const {results,report:stages}=await recallArchive({scope,query,relatedQuery,recentEvidence:evidence,documents,scene,embed:embedding,threshold,signal,version});
+ // Rules and lore pinned by the room retain eligibility even when recent
+ // evidence covers the request. The game prompt packer enforces its final cap.
+ const selected=new Set(results.map(result=>result.chunk.metadata.documentId));
+ for(const descriptor of descriptors.filter(doc=>doc.metadata.tags.includes('pinned')).slice(0,24)){
+  if(selected.has(descriptor.id))continue;
+  const content=descriptor.text.slice(0,520);
+  results.push({chunk:{id:'pinned:'+descriptor.id,content,metadata:{...descriptor.metadata,documentId:descriptor.id,start:0,end:content.length}},keywordScore:0,vectorScore:0,finalScore:0});
+ }
+ const sources=results.map(({chunk,vectorScore,keywordScore,finalScore})=>({id:chunk.id,...chunk.metadata,vectorScore,keywordScore,score:finalScore}));
+ const sourceExcerpts=results.filter(result=>result.chunk.metadata.kind==='source').map(({chunk})=>({messageId:chunk.metadata.messageId,index:chunk.metadata.index,text:chunk.content,...(chunk.metadata.evidenceStatus?{evidenceStatus:chunk.metadata.evidenceStatus,evidenceConflict:chunk.metadata.evidenceConflict}:{})}));
+ return {
+  retrieval:{gameRag:true,gameRagResults:results,memoryIds:[],vectorLoreIds:[],...(version===2?{archiveEvidence:stages}:{})},
+  report:{vectorStatus:stages.vectorStatus,memoryIds:[],sources,sourceExcerpts,archiveRecall:stages,rag:{scope,documents:descriptors.length,chunks:stages.scanned,candidates:stages.candidates,embeddingCalls:stages.embeddingPasses,tokenizer:'archive'}},
+  warnings:stages.warnings,text:'',
+ };
 }
 function sceneOf(chat){
  const scene=chat.gameScene||chat.scene||{};
@@ -69,10 +101,12 @@ export function createGameRag({embeddings,chunkLorebook=semanticChunkLorebook,as
   for(const room of rooms.values())while(room.documents.size>maxSources){const id=room.documents.keys().next().value;room.chunks-=room.documents.get(id).chunks.length;room.documents.delete(id);statistics.evictions++;}
   while(count()>maxChunks){const scope=rooms.keys().next().value,room=rooms.get(scope);if(!room)break;const id=room.documents.keys().next().value;if(id===undefined){dropRoom(scope);continue;}room.chunks-=room.documents.get(id).chunks.length;room.documents.delete(id);statistics.evictions++;}
  }
- async function recall(state,chat,signal){
+ async function recall(state,chat,signal,{focusQuery}={}){
   signal?.throwIfAborted();if(!gameModes.has(chat.mode)||!chat.roomId||chat.id!=='room-'+chat.roomId)throw new Error('RAG приключения требует область текущей комнаты.');
   const policy=gameMemoryPolicy(chat),scope='room:'+chat.roomId,room=manifest(scope),posts=roundMessages(chat),warnings=[];
+  const focus=typeof focusQuery==='string'?trimQuery(focusQuery.trim(),950):'';
   const connection=localEmbeddingConnection(state),vectorAllowed=policy.vectors&&!!connection&&typeof embeddings?.vectors==='function';
+  if(archiveMemoryEnabled(chat.memorySettings)&&policy.sources)return recallStagedGame(state,chat,signal,{policy,scope,posts,sourceDocuments,focus,embedding:vectorAllowed?(texts,searchSignal)=>embeddings.vectors(state,texts,searchSignal):undefined});
   let vectorStatus=!policy.vectors?'disabled':vectorAllowed?'ready':'fallback';
   if(policy.vectors&&!vectorAllowed)warnings.push('Векторный поиск приключения доступен только через выбранное локальное embedding-подключение. Используется поиск по словам.');
   const descriptors=sourceDescriptors(state,chat,policy,sourceDocuments,posts),live=new Set(descriptors.map(d=>d.id)),chunks=[];
@@ -106,7 +140,7 @@ export function createGameRag({embeddings,chunkLorebook=semanticChunkLorebook,as
   }
   trim();
   if(nativeFailed)for(let i=0;i<chunks.length;i++)chunks[i]={...chunks[i],metadata:{...chunks[i].metadata,vectorized:false}};
-  const perPost=Math.max(60,Math.floor(4200/Math.max(1,posts.length))),query=posts.length?posts.map(m=>trimQuery(m.content,perPost)).join('\n'):trimQuery(chat.messages.filter(narrative).at(-1)?.content||sceneOf(chat).currentLocation||'События приключения',1800);
+  const perPost=Math.max(60,Math.floor(4200/Math.max(1,posts.length))),query=focus||(posts.length?posts.map(m=>trimQuery(m.content,perPost)).join('\n'):trimQuery(chat.messages.filter(narrative).at(-1)?.content||sceneOf(chat).currentLocation||'События приключения',1800));
   let calls=0;
   const embed=vectorAllowed&&!nativeFailed?async(texts,searchSignal)=>{if(++calls>1)throw new Error('Векторизация поиска должна выполняться одним запросом.');return embeddings.vectors(state,texts,searchSignal);}:undefined;
   const results=chunks.length?await search(query,sceneOf(chat),{chunks,embed,scope,topK:20,vectorTopK:10,keywordTopK:10,vectorThreshold:Number(state.settings?.embeddings?.threshold??.35),signal,onVectorError:error=>{signal?.throwIfAborted();vectorStatus='fallback';warnings.push('Векторный поиск: '+String(error?.message||error));}}):[];
